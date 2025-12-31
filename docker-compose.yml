@@ -1,0 +1,70 @@
+services:
+  dashcore:
+    image: dashpay/dashd:latest
+    container_name: faucet-dashcore
+    command: ["dashd"]
+    volumes:
+      - dashcore-data:/home/dash/.dashcore
+      - ./dashcore-config/dash.conf:/home/dash/.dashcore/dash.conf:ro
+    ports:
+      - "19998:19998"
+      - "19999:19999"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "dash-cli", "-testnet", "-rpcuser=dashrpc", "-rpcpassword=password", "getblockchaininfo"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+
+  cap:
+    image: tiago2/cap:latest
+    container_name: faucet-cap
+    ports:
+      - "3000:3000"
+    environment:
+      - ADMIN_KEY=${CAP_ADMIN_KEY:-change-me-to-a-secure-random-key-at-least-30-chars}
+    volumes:
+      - cap-data:/usr/src/app/.data
+    restart: unless-stopped
+
+  faucet:
+    build: .
+    container_name: faucet-app
+    ports:
+      - "8000:8000"
+    environment:
+      - DASH_RPC_USER=dashrpc
+      - DASH_RPC_PASSWORD=password
+      - DASH_RPC_HOST=dashcore
+      - DASH_RPC_PORT=19998
+      - RATE_LIMIT_PER_HOUR=3
+      - CREDIT_AMOUNT=100000000
+      - CORE_FAUCET_AMOUNT=1.0
+      - ISLOCK_TIMEOUT=30
+      - CAP_API_ENDPOINT=${CAP_API_ENDPOINT:-http://localhost:3000}
+      - CAP_INTERNAL_ENDPOINT=http://cap:3000
+      - CAP_SITE_KEY=${CAP_SITE_KEY:-}
+      - CAP_SECRET=${CAP_SECRET:-}
+    depends_on:
+      dashcore:
+        condition: service_healthy
+      cap:
+        condition: service_started
+    restart: unless-stopped
+
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: faucet-tunnel
+    command: tunnel run
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      - faucet
+    restart: unless-stopped
+    profiles:
+      - tunnel
+
+volumes:
+  dashcore-data:
+  cap-data:

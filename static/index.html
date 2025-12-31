@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Platform Identity Faucet</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            color: #e0e0e0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        header {
+            text-align: center;
+            padding: 40px 0;
+        }
+        h1 {
+            color: #008de4;
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            color: #888;
+            font-size: 1.1rem;
+        }
+        .card {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 30px;
+            margin: 20px 0;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .btn {
+            background: #008de4;
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            font-size: 1.2rem;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .btn:hover {
+            background: #0070b8;
+            transform: translateY(-2px);
+        }
+        .btn:disabled {
+            background: #555;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .spinner {
+            width: 20px;
+            height: 20px;
+            border: 2px solid transparent;
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            display: none;
+        }
+        .btn.loading .spinner {
+            display: block;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .result-section {
+            display: none;
+            margin-top: 30px;
+        }
+        .result-section.visible {
+            display: block;
+        }
+        .field {
+            margin: 20px 0;
+        }
+        .field-label {
+            color: #008de4;
+            font-weight: 600;
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .field-value {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 6px;
+            padding: 15px;
+            font-family: 'Monaco', 'Consolas', monospace;
+            font-size: 0.85rem;
+            word-break: break-all;
+            overflow-x: auto;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .copy-btn {
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            color: #888;
+            padding: 5px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.8rem;
+        }
+        .copy-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+        }
+        .copy-btn.copied {
+            background: #28a745;
+            color: white;
+        }
+        .error {
+            background: rgba(220, 53, 69, 0.2);
+            border: 1px solid #dc3545;
+            color: #ff6b6b;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            display: none;
+        }
+        .error.visible {
+            display: block;
+        }
+        .info-box {
+            background: rgba(0, 141, 228, 0.1);
+            border: 1px solid rgba(0, 141, 228, 0.3);
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 20px;
+        }
+        .info-box h3 {
+            color: #008de4;
+            margin-bottom: 10px;
+        }
+        .info-box a {
+            color: #00b3ff;
+        }
+        .status-bar {
+            text-align: center;
+            padding: 10px;
+            color: #888;
+            font-size: 0.9rem;
+        }
+        .txid-link {
+            color: #00b3ff;
+            text-decoration: none;
+        }
+        .txid-link:hover {
+            text-decoration: underline;
+        }
+        .captcha-container {
+            margin: 20px 0;
+            display: flex;
+            justify-content: center;
+        }
+        .captcha-container.hidden {
+            display: none;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@cap.js/widget" defer></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Dash Testnet Faucet</h1>
+            <p class="subtitle">Get testnet DASH and identity credentials</p>
+        </header>
+
+        <!-- CAP Challenge (shared) -->
+        <div class="card" id="capCard" style="text-align: center; display: none;">
+            <h3 style="color: #008de4; margin-bottom: 15px;">Complete Challenge</h3>
+            <p style="margin-bottom: 15px; color: #aaa;">Solve the proof-of-work challenge to continue</p>
+            <div class="captcha-container" id="captchaContainer"></div>
+        </div>
+
+        <!-- Core Faucet Section -->
+        <div class="card">
+            <h2 style="margin-bottom: 15px; color: #008de4;">Core Wallet Faucet</h2>
+            <p style="margin-bottom: 20px; color: #aaa;">
+                Enter your testnet address to receive <span id="coreFaucetAmountDisplay">1</span> tDash
+            </p>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                <input type="text" id="addressInput" placeholder="Enter your testnet Dash address (y...)"
+                    style="flex: 1; min-width: 250px; padding: 12px 15px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.3); color: #e0e0e0; font-size: 1rem;">
+                <button class="btn" id="coreFaucetBtn" onclick="requestCoreFaucet()" disabled>
+                    <span class="spinner"></span>
+                    <span class="btn-text">Get tDash</span>
+                </button>
+            </div>
+            <div class="result-section" id="coreResults" style="margin-top: 20px;">
+                <div class="field" style="margin: 0;">
+                    <div class="field-label">
+                        <span>Transaction ID</span>
+                        <button class="copy-btn" onclick="copyField('coreTxid')">Copy</button>
+                    </div>
+                    <div class="field-value" id="coreTxid"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="error" id="coreErrorBox"></div>
+
+        <!-- Identity Faucet Section -->
+        <div class="card" style="text-align: center;">
+            <h2 style="margin-bottom: 15px; color: #008de4;">Platform Identity Package</h2>
+            <p style="margin-bottom: 20px; color: #aaa;">
+                Get everything you need to create a Platform identity on testnet
+            </p>
+            <button class="btn" id="faucetBtn" onclick="requestIdentity()" disabled>
+                <span class="spinner"></span>
+                <span class="btn-text">Get Identity Package</span>
+            </button>
+        </div>
+
+        <div class="error" id="errorBox"></div>
+
+        <div class="result-section" id="results">
+            <div class="card">
+                <h2 style="margin-bottom: 20px; color: #008de4;">Your Identity Package</h2>
+
+                <div class="field">
+                    <div class="field-label">
+                        <span>Transaction ID</span>
+                        <button class="copy-btn" onclick="copyField('txid')">Copy</button>
+                    </div>
+                    <div class="field-value" id="txid"></div>
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
+                        <span>Asset Lock Proof</span>
+                        <button class="copy-btn" onclick="copyField('assetLockProof')">Copy</button>
+                    </div>
+                    <div class="field-value" id="assetLockProof"></div>
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
+                        <span>Asset Lock Proof Private Key (WIF)</span>
+                        <button class="copy-btn" onclick="copyField('assetLockProofPrivateKey')">Copy</button>
+                    </div>
+                    <div class="field-value" id="assetLockProofPrivateKey"></div>
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
+                        <span>Public Keys (JSON)</span>
+                        <button class="copy-btn" onclick="copyField('publicKeys')">Copy</button>
+                    </div>
+                    <div class="field-value" id="publicKeys"></div>
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
+                        <span>Credits Amount</span>
+                    </div>
+                    <div class="field-value" id="creditsAmount"></div>
+                </div>
+
+                <div class="info-box">
+                    <h3>Next Steps</h3>
+                    <p>Use the data above to create your identity on the
+                        <a href="https://dashpay.github.io/evo-sdk-website/" target="_blank">Dash Platform Evo SDK Website</a>:
+                    </p>
+                    <ol style="margin: 10px 0 0 20px; line-height: 1.8;">
+                        <li>Go to the "Identity Create" operation</li>
+                        <li>Paste the <strong>Asset Lock Proof</strong></li>
+                        <li>Paste the <strong>Asset Lock Proof Private Key</strong></li>
+                        <li>Paste the <strong>Public Keys</strong> JSON</li>
+                        <li>Click Execute</li>
+                    </ol>
+                </div>
+            </div>
+        </div>
+
+        <div class="card" id="fundingCard" style="display: none;">
+            <h3 style="color: #008de4; margin-bottom: 10px;">Fund This Faucet</h3>
+            <p style="color: #aaa; margin-bottom: 15px;">Send testnet DASH to the address below:</p>
+            <div class="field" style="margin: 0;">
+                <div class="field-label">
+                    <span>Deposit Address</span>
+                    <button class="copy-btn" onclick="copyDepositAddress()">Copy</button>
+                </div>
+                <div class="field-value" id="depositAddress" style="text-align: center; font-size: 1rem;"></div>
+            </div>
+        </div>
+
+        <div class="status-bar" id="statusBar">
+            Loading faucet status...
+        </div>
+    </div>
+
+    <script>
+        let capToken = null;
+        let capInstance = null;
+        let capEnabled = false;
+
+        function enableButtons() {
+            document.getElementById('faucetBtn').disabled = false;
+            document.getElementById('faucetBtn').querySelector('.btn-text').textContent = 'Get Identity Package';
+            document.getElementById('coreFaucetBtn').disabled = false;
+            document.getElementById('coreFaucetBtn').querySelector('.btn-text').textContent = 'Get tDash';
+        }
+
+        function disableButtons() {
+            document.getElementById('faucetBtn').disabled = true;
+            document.getElementById('faucetBtn').querySelector('.btn-text').textContent = 'Complete challenge first';
+            document.getElementById('coreFaucetBtn').disabled = true;
+            document.getElementById('coreFaucetBtn').querySelector('.btn-text').textContent = 'Complete challenge first';
+        }
+
+        function resetCap() {
+            if (capEnabled) {
+                capToken = null;
+                disableButtons();
+                initCap();
+            }
+        }
+
+        async function requestCoreFaucet() {
+            const btn = document.getElementById('coreFaucetBtn');
+            const errorBox = document.getElementById('coreErrorBox');
+            const results = document.getElementById('coreResults');
+            const addressInput = document.getElementById('addressInput');
+
+            const address = addressInput.value.trim();
+            if (!address) {
+                errorBox.textContent = 'Please enter a Dash address';
+                errorBox.classList.add('visible');
+                return;
+            }
+
+            btn.classList.add('loading');
+            btn.disabled = true;
+            btn.querySelector('.btn-text').textContent = 'Sending...';
+            errorBox.classList.remove('visible');
+            results.classList.remove('visible');
+
+            try {
+                const body = { address };
+                if (capToken) {
+                    body.capToken = capToken;
+                }
+
+                const response = await fetch('/api/core-faucet', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.detail?.error || data.detail || 'Request failed');
+                }
+
+                // Display results
+                document.getElementById('coreTxid').textContent = data.txid;
+                results.classList.add('visible');
+
+                // Clear input
+                addressInput.value = '';
+
+                // Reset CAP for next request
+                resetCap();
+
+            } catch (error) {
+                errorBox.textContent = error.message;
+                errorBox.classList.add('visible');
+                resetCap();
+            } finally {
+                btn.classList.remove('loading');
+                if (!capEnabled) {
+                    btn.disabled = false;
+                    btn.querySelector('.btn-text').textContent = 'Get tDash';
+                }
+            }
+        }
+
+        async function requestIdentity() {
+            const btn = document.getElementById('faucetBtn');
+            const errorBox = document.getElementById('errorBox');
+            const results = document.getElementById('results');
+
+            btn.classList.add('loading');
+            btn.disabled = true;
+            btn.querySelector('.btn-text').textContent = 'Creating...';
+            errorBox.classList.remove('visible');
+            results.classList.remove('visible');
+
+            try {
+                const body = {};
+                if (capToken) {
+                    body.capToken = capToken;
+                }
+
+                const response = await fetch('/api/faucet', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.detail?.error || data.detail || 'Request failed');
+                }
+
+                // Display results
+                document.getElementById('txid').textContent = data.txid;
+                document.getElementById('assetLockProof').textContent = data.assetLockProof;
+                document.getElementById('assetLockProofPrivateKey').textContent = data.assetLockProofPrivateKey;
+                document.getElementById('publicKeys').textContent = JSON.stringify(data.publicKeys, null, 2);
+                document.getElementById('creditsAmount').textContent =
+                    `${data.creditsAmount} duffs (${data.creditsAmount / 100000000} DASH)`;
+
+                results.classList.add('visible');
+                results.scrollIntoView({ behavior: 'smooth' });
+
+                // Reset CAP for next request
+                resetCap();
+
+            } catch (error) {
+                errorBox.textContent = error.message;
+                errorBox.classList.add('visible');
+                resetCap();
+            } finally {
+                btn.classList.remove('loading');
+                if (!capEnabled) {
+                    btn.disabled = false;
+                    btn.querySelector('.btn-text').textContent = 'Get Identity Package';
+                }
+            }
+        }
+
+        function initCap() {
+            if (!window.capEndpoint) return;
+
+            // Wait for Cap library to load
+            if (!window.Cap) {
+                setTimeout(initCap, 100);
+                return;
+            }
+
+            const container = document.getElementById('captchaContainer');
+            container.innerHTML = '<div style="color: #888;">Initializing challenge...</div>';
+
+            try {
+                capInstance = new Cap({
+                    apiEndpoint: window.capEndpoint
+                });
+
+                // Add progress listener before solving
+                capInstance.addEventListener('progress', (event) => {
+                    const progress = Math.round(event.detail.progress);
+                    container.innerHTML = `<div style="color: #888;">Solving challenge... ${progress}%</div>`;
+                });
+
+                container.innerHTML = '<div style="color: #888;">Solving challenge... 0%</div>';
+
+                capInstance.solve().then((solution) => {
+                    capToken = solution.token;
+                    container.innerHTML = '<div style="color: #28a745;">✓ Challenge complete - select an option below</div>';
+                    enableButtons();
+                }).catch((err) => {
+                    console.error('CAP solve failed:', err);
+                    container.innerHTML = '<div style="color: #dc3545;">Challenge failed - refresh to retry</div>';
+                });
+            } catch (err) {
+                console.error('CAP init failed:', err);
+                container.innerHTML = '<div style="color: #dc3545;">Challenge init failed</div>';
+            }
+        }
+
+        async function copyField(fieldId) {
+            const field = document.getElementById(fieldId);
+            const btn = event.target;
+
+            try {
+                await navigator.clipboard.writeText(field.textContent);
+                btn.textContent = 'Copied!';
+                btn.classList.add('copied');
+                setTimeout(() => {
+                    btn.textContent = 'Copy';
+                    btn.classList.remove('copied');
+                }, 2000);
+            } catch (err) {
+                console.error('Failed to copy:', err);
+            }
+        }
+
+        async function copyDepositAddress() {
+            const field = document.getElementById('depositAddress');
+            const btn = event.target;
+
+            try {
+                await navigator.clipboard.writeText(field.textContent);
+                btn.textContent = 'Copied!';
+                btn.classList.add('copied');
+                setTimeout(() => {
+                    btn.textContent = 'Copy';
+                    btn.classList.remove('copied');
+                }, 2000);
+            } catch (err) {
+                console.error('Failed to copy:', err);
+            }
+        }
+
+        async function loadStatus() {
+            try {
+                const response = await fetch('/api/status');
+                const data = await response.json();
+
+                if (data.status === 'ok' || data.status === 'low_balance') {
+                    const balance = parseFloat(data.balance);
+                    document.getElementById('statusBar').innerHTML =
+                        `Balance: ${balance.toFixed(4)} DASH | ` +
+                        `UTXOs: ${data.availableUtxos} | ` +
+                        `Rate Limit: ${data.rateLimitPerHour}/hour | ` +
+                        `Block: ${data.blockHeight.toLocaleString()}`;
+
+                    // Show deposit address
+                    if (data.depositAddress) {
+                        document.getElementById('depositAddress').textContent = data.depositAddress;
+                        document.getElementById('fundingCard').style.display = 'block';
+                    }
+
+                    // Set core faucet amount display
+                    if (data.coreFaucetAmount) {
+                        document.getElementById('coreFaucetAmountDisplay').textContent = data.coreFaucetAmount;
+                    }
+
+                    // Initialize CAP if configured
+                    if (data.capEndpoint) {
+                        window.capEndpoint = data.capEndpoint;
+                        capEnabled = true;
+                        document.getElementById('capCard').style.display = 'block';
+                        disableButtons();
+                        initCap();
+                    } else {
+                        // No CAP configured, enable buttons immediately
+                        enableButtons();
+                    }
+                } else {
+                    document.getElementById('statusBar').textContent =
+                        'Faucet status: ' + (data.error || 'unavailable');
+                }
+            } catch (err) {
+                document.getElementById('statusBar').textContent = 'Could not load faucet status';
+            }
+        }
+
+        // Load status on page load
+        loadStatus();
+    </script>
+</body>
+</html>
