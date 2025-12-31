@@ -1,9 +1,28 @@
 """IP-based rate limiting middleware."""
+import ipaddress
 import time
 from collections import defaultdict
 from threading import Lock
 
 from app.config import settings
+
+
+def normalize_ip(ip: str) -> str:
+    """Normalize IP address for rate limiting.
+
+    IPv4: use as-is
+    IPv6: truncate to /48 prefix (users typically have /48 or /64 blocks)
+    """
+    try:
+        addr = ipaddress.ip_address(ip)
+        if isinstance(addr, ipaddress.IPv6Address):
+            # Truncate to /48 network
+            network = ipaddress.IPv6Network((addr, 48), strict=False)
+            return str(network.network_address)
+        return ip
+    except ValueError:
+        # Invalid IP, return as-is
+        return ip
 
 
 class RateLimiter:
@@ -35,6 +54,7 @@ class RateLimiter:
         Returns:
             Tuple of (is_allowed, seconds_until_reset)
         """
+        ip = normalize_ip(ip)
         current_time = time.time()
 
         with self._lock:
@@ -54,6 +74,7 @@ class RateLimiter:
         Args:
             ip: The client IP address
         """
+        ip = normalize_ip(ip)
         current_time = time.time()
 
         with self._lock:
@@ -69,6 +90,7 @@ class RateLimiter:
         Returns:
             Number of remaining requests in the current window
         """
+        ip = normalize_ip(ip)
         current_time = time.time()
 
         with self._lock:

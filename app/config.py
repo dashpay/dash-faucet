@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     cap_site_key: str = ""
     cap_secret: str = ""
 
+    # Hard CAP for rate limit bypass (higher difficulty)
+    cap_hard_site_key: str = ""
+    cap_hard_secret: str = ""
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

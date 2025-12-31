@@ -46,6 +46,8 @@ services:
       - CAP_INTERNAL_ENDPOINT=http://cap:3000
       - CAP_SITE_KEY=${CAP_SITE_KEY:-}
       - CAP_SECRET=${CAP_SECRET:-}
+      - CAP_HARD_SITE_KEY=${CAP_HARD_SITE_KEY:-}
+      - CAP_HARD_SECRET=${CAP_HARD_SECRET:-}
     depends_on:
       dashcore:
         condition: service_healthy

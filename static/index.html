@@ -163,14 +163,6 @@
         .txid-link:hover {
             text-decoration: underline;
         }
-        .captcha-container {
-            margin: 20px 0;
-            display: flex;
-            justify-content: center;
-        }
-        .captcha-container.hidden {
-            display: none;
-        }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/@cap.js/widget" defer></script>
 </head>
@@ -181,13 +173,6 @@
             <p class="subtitle">Get testnet DASH and identity credentials</p>
         </header>
 
-        <!-- CAP Challenge (shared) -->
-        <div class="card" id="capCard" style="text-align: center; display: none;">
-            <h3 style="color: #008de4; margin-bottom: 15px;">Complete Challenge</h3>
-            <p style="margin-bottom: 15px; color: #aaa;">Solve the proof-of-work challenge to continue</p>
-            <div class="captcha-container" id="captchaContainer"></div>
-        </div>
-
         <!-- Core Faucet Section -->
         <div class="card">
             <h2 style="margin-bottom: 15px; color: #008de4;">Core Wallet Faucet</h2>
@@ -197,7 +182,7 @@
             <div style="display: flex; gap: 10px; flex-wrap: wrap;">
                 <input type="text" id="addressInput" placeholder="Enter your testnet Dash address (y...)"
                     style="flex: 1; min-width: 250px; padding: 12px 15px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.3); color: #e0e0e0; font-size: 1rem;">
-                <button class="btn" id="coreFaucetBtn" onclick="requestCoreFaucet()" disabled>
+                <button class="btn" id="coreFaucetBtn" onclick="requestCoreFaucet()">
                     <span class="spinner"></span>
                     <span class="btn-text">Get tDash</span>
                 </button>
@@ -221,7 +206,7 @@
             <p style="margin-bottom: 20px; color: #aaa;">
                 Get everything you need to create a Platform identity on testnet
             </p>
-            <button class="btn" id="faucetBtn" onclick="requestIdentity()" disabled>
+            <button class="btn" id="faucetBtn" onclick="requestIdentity()">
                 <span class="spinner"></span>
                 <span class="btn-text">Get Identity Package</span>
             </button>
@@ -306,29 +291,34 @@
     </div>
 
     <script>
-        let capToken = null;
-        let capInstance = null;
         let capEnabled = false;
+        let hardCapEnabled = false;
 
-        function enableButtons() {
-            document.getElementById('faucetBtn').disabled = false;
-            document.getElementById('faucetBtn').querySelector('.btn-text').textContent = 'Get Identity Package';
-            document.getElementById('coreFaucetBtn').disabled = false;
-            document.getElementById('coreFaucetBtn').querySelector('.btn-text').textContent = 'Get tDash';
-        }
+        async function solveCap(btn, label, hard = false) {
+            const endpoint = hard ? window.hardCapEndpoint : window.capEndpoint;
+            const enabled = hard ? hardCapEnabled : capEnabled;
 
-        function disableButtons() {
-            document.getElementById('faucetBtn').disabled = true;
-            document.getElementById('faucetBtn').querySelector('.btn-text').textContent = 'Complete challenge first';
-            document.getElementById('coreFaucetBtn').disabled = true;
-            document.getElementById('coreFaucetBtn').querySelector('.btn-text').textContent = 'Complete challenge first';
-        }
+            if (!enabled || !window.Cap || !endpoint) {
+                return null;
+            }
 
-        function resetCap() {
-            if (capEnabled) {
-                capToken = null;
-                disableButtons();
-                initCap();
+            const textEl = btn.querySelector('.btn-text');
+            const prefix = hard ? 'Solving hard challenge' : 'Solving challenge';
+
+            try {
+                const cap = new Cap({ apiEndpoint: endpoint });
+
+                cap.addEventListener('progress', (event) => {
+                    const progress = Math.round(event.detail.progress);
+                    textEl.textContent = `${prefix}... ${progress}%`;
+                });
+
+                textEl.textContent = `${prefix}... 0%`;
+                const solution = await cap.solve();
+                return solution.token;
+            } catch (err) {
+                console.error('CAP solve failed:', err);
+                throw new Error(`${hard ? 'Hard challenge' : 'Challenge'} failed - please try again`);
             }
         }
 
@@ -347,48 +337,57 @@
 
             btn.classList.add('loading');
             btn.disabled = true;
-            btn.querySelector('.btn-text').textContent = 'Sending...';
             errorBox.classList.remove('visible');
             results.classList.remove('visible');
 
             try {
+                const capToken = await solveCap(btn, 'Get tDash');
+                btn.querySelector('.btn-text').textContent = 'Sending...';
+
                 const body = { address };
                 if (capToken) {
                     body.capToken = capToken;
                 }
 
-                const response = await fetch('/api/core-faucet', {
+                let response = await fetch('/api/core-faucet', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(body)
                 });
 
-                const data = await response.json();
+                let data = await response.json();
+
+                // Handle rate limit with hard captcha bypass
+                if (response.status === 429 && data.detail?.requiresHardCaptcha) {
+                    const hardCapToken = await solveCap(btn, 'Get tDash', true);
+                    if (hardCapToken) {
+                        body.hardCapToken = hardCapToken;
+                        btn.querySelector('.btn-text').textContent = 'Sending...';
+
+                        response = await fetch('/api/core-faucet', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(body)
+                        });
+                        data = await response.json();
+                    }
+                }
 
                 if (!response.ok) {
                     throw new Error(data.detail?.error || data.detail || 'Request failed');
                 }
 
-                // Display results
                 document.getElementById('coreTxid').textContent = data.txid;
                 results.classList.add('visible');
-
-                // Clear input
                 addressInput.value = '';
-
-                // Reset CAP for next request
-                resetCap();
 
             } catch (error) {
                 errorBox.textContent = error.message;
                 errorBox.classList.add('visible');
-                resetCap();
             } finally {
                 btn.classList.remove('loading');
-                if (!capEnabled) {
-                    btn.disabled = false;
-                    btn.querySelector('.btn-text').textContent = 'Get tDash';
-                }
+                btn.disabled = false;
+                btn.querySelector('.btn-text').textContent = 'Get tDash';
             }
         }
 
@@ -399,29 +398,46 @@
 
             btn.classList.add('loading');
             btn.disabled = true;
-            btn.querySelector('.btn-text').textContent = 'Creating...';
             errorBox.classList.remove('visible');
             results.classList.remove('visible');
 
             try {
+                const capToken = await solveCap(btn, 'Get Identity Package');
+                btn.querySelector('.btn-text').textContent = 'Creating...';
+
                 const body = {};
                 if (capToken) {
                     body.capToken = capToken;
                 }
 
-                const response = await fetch('/api/faucet', {
+                let response = await fetch('/api/faucet', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(body)
                 });
 
-                const data = await response.json();
+                let data = await response.json();
+
+                // Handle rate limit with hard captcha bypass
+                if (response.status === 429 && data.detail?.requiresHardCaptcha) {
+                    const hardCapToken = await solveCap(btn, 'Get Identity Package', true);
+                    if (hardCapToken) {
+                        body.hardCapToken = hardCapToken;
+                        btn.querySelector('.btn-text').textContent = 'Creating...';
+
+                        response = await fetch('/api/faucet', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(body)
+                        });
+                        data = await response.json();
+                    }
+                }
 
                 if (!response.ok) {
                     throw new Error(data.detail?.error || data.detail || 'Request failed');
                 }
 
-                // Display results
                 document.getElementById('txid').textContent = data.txid;
                 document.getElementById('assetLockProof').textContent = data.assetLockProof;
                 document.getElementById('assetLockProofPrivateKey').textContent = data.assetLockProofPrivateKey;
@@ -432,58 +448,13 @@
                 results.classList.add('visible');
                 results.scrollIntoView({ behavior: 'smooth' });
 
-                // Reset CAP for next request
-                resetCap();
-
             } catch (error) {
                 errorBox.textContent = error.message;
                 errorBox.classList.add('visible');
-                resetCap();
             } finally {
                 btn.classList.remove('loading');
-                if (!capEnabled) {
-                    btn.disabled = false;
-                    btn.querySelector('.btn-text').textContent = 'Get Identity Package';
-                }
-            }
-        }
-
-        function initCap() {
-            if (!window.capEndpoint) return;
-
-            // Wait for Cap library to load
-            if (!window.Cap) {
-                setTimeout(initCap, 100);
-                return;
-            }
-
-            const container = document.getElementById('captchaContainer');
-            container.innerHTML = '<div style="color: #888;">Initializing challenge...</div>';
-
-            try {
-                capInstance = new Cap({
-                    apiEndpoint: window.capEndpoint
-                });
-
-                // Add progress listener before solving
-                capInstance.addEventListener('progress', (event) => {
-                    const progress = Math.round(event.detail.progress);
-                    container.innerHTML = `<div style="color: #888;">Solving challenge... ${progress}%</div>`;
-                });
-
-                container.innerHTML = '<div style="color: #888;">Solving challenge... 0%</div>';
-
-                capInstance.solve().then((solution) => {
-                    capToken = solution.token;
-                    container.innerHTML = '<div style="color: #28a745;">✓ Challenge complete - select an option below</div>';
-                    enableButtons();
-                }).catch((err) => {
-                    console.error('CAP solve failed:', err);
-                    container.innerHTML = '<div style="color: #dc3545;">Challenge failed - refresh to retry</div>';
-                });
-            } catch (err) {
-                console.error('CAP init failed:', err);
-                container.innerHTML = '<div style="color: #dc3545;">Challenge init failed</div>';
+                btn.disabled = false;
+                btn.querySelector('.btn-text').textContent = 'Get Identity Package';
             }
         }
 
@@ -534,27 +505,23 @@
                         `Rate Limit: ${data.rateLimitPerHour}/hour | ` +
                         `Block: ${data.blockHeight.toLocaleString()}`;
 
-                    // Show deposit address
                     if (data.depositAddress) {
                         document.getElementById('depositAddress').textContent = data.depositAddress;
                         document.getElementById('fundingCard').style.display = 'block';
                     }
 
-                    // Set core faucet amount display
                     if (data.coreFaucetAmount) {
                         document.getElementById('coreFaucetAmountDisplay').textContent = data.coreFaucetAmount;
                     }
 
-                    // Initialize CAP if configured
                     if (data.capEndpoint) {
                         window.capEndpoint = data.capEndpoint;
                         capEnabled = true;
-                        document.getElementById('capCard').style.display = 'block';
-                        disableButtons();
-                        initCap();
-                    } else {
-                        // No CAP configured, enable buttons immediately
-                        enableButtons();
+                    }
+
+                    if (data.hardCapEndpoint) {
+                        window.hardCapEndpoint = data.hardCapEndpoint;
+                        hardCapEnabled = true;
                     }
                 } else {
                     document.getElementById('statusBar').textContent =
