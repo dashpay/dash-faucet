@@ -15,6 +15,20 @@ class FaucetRequest(BaseModel):
     hardCapToken: str | None = None
 
 
+class AssetLockProofRequest(BaseModel):
+    """Request body for asset lock proof endpoint (client-side key generation)."""
+    assetLockPublicKey: str  # Hex-encoded compressed public key (33 bytes)
+    capToken: str | None = None
+    hardCapToken: str | None = None
+
+
+class AssetLockProofResponse(BaseModel):
+    """Response for asset lock proof endpoint."""
+    assetLockProof: str
+    txid: str
+    creditsAmount: int
+
+
 class CoreFaucetRequest(BaseModel):
     """Request body for core faucet endpoint."""
     address: str
@@ -196,11 +210,17 @@ async def create_identity_package(request: Request, body: FaucetRequest = Faucet
                 }
             )
 
+        # Get deposit address scriptPubKey for change output
+        deposit_addr = dash_client.get_deposit_address()
+        addr_info = dash_client.get_address_info(deposit_addr)
+        change_script = bytes.fromhex(addr_info["scriptPubKey"])
+
         # Create asset lock transaction
         tx, tx_bytes = create_asset_lock_transaction(
             utxo=utxo,
             amount=settings.credit_amount,
-            asset_lock_pubkey=asset_lock_keypair.public_key
+            asset_lock_pubkey=asset_lock_keypair.public_key,
+            change_script_pubkey=change_script
         )
 
         # Sign the transaction with the wallet
@@ -255,6 +275,177 @@ async def create_identity_package(request: Request, body: FaucetRequest = Faucet
             txid=txid,
             creditsAmount=settings.credit_amount,
             identityId=None  # Could calculate from proof if needed
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "Internal server error",
+                "detail": str(e)
+            }
+        )
+
+
+@router.post(
+    "/asset-lock-proof",
+    response_model=AssetLockProofResponse,
+    responses={
+        400: {"model": ErrorResponse, "description": "Invalid request or captcha"},
+        429: {"model": RateLimitResponse, "description": "Rate limit exceeded"},
+        500: {"model": ErrorResponse, "description": "Server error"},
+        503: {"model": ErrorResponse, "description": "Service unavailable"}
+    }
+)
+async def create_asset_lock_proof(request: Request, body: AssetLockProofRequest) -> AssetLockProofResponse:
+    """Create an asset lock proof using a client-provided public key.
+
+    This endpoint provides a security-first approach where:
+    1. Client generates all keys locally (private keys never leave browser)
+    2. Client sends only the asset lock PUBLIC KEY
+    3. Server creates and broadcasts the asset lock transaction
+    4. Server returns only the proof (no private keys)
+
+    The client then uses the locally-held private keys with the evo-sdk
+    to register the identity on Platform.
+
+    Returns:
+        AssetLockProofResponse with proof, txid, and credits amount
+    """
+    # Validate public key format
+    try:
+        pubkey_bytes = bytes.fromhex(body.assetLockPublicKey)
+        if len(pubkey_bytes) != 33:
+            raise ValueError("Public key must be 33 bytes (compressed)")
+        if pubkey_bytes[0] not in (0x02, 0x03):
+            raise ValueError("Invalid compressed public key prefix")
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": f"Invalid public key: {e}"}
+        )
+
+    # CAP verification (if configured)
+    cap_configured = bool(settings.cap_site_key and settings.cap_secret)
+    if cap_configured and not body.hardCapToken:
+        if not body.capToken:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "Captcha token required"}
+            )
+        if not await verify_cap_token(body.capToken):
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "Invalid captcha token"}
+            )
+
+    # Rate limiting
+    client_ip = get_client_ip(request)
+    allowed, retry_after = rate_limiter.is_allowed(client_ip)
+
+    if not allowed:
+        hard_cap_configured = bool(settings.cap_hard_site_key and settings.cap_hard_secret)
+
+        if body.hardCapToken:
+            if not await verify_cap_token(body.hardCapToken, hard=True):
+                raise HTTPException(
+                    status_code=400,
+                    detail={"error": "Invalid hard captcha token"}
+                )
+        elif hard_cap_configured:
+            raise HTTPException(
+                status_code=429,
+                detail={
+                    "error": "Rate limit exceeded",
+                    "retryAfter": retry_after,
+                    "requiresHardCaptcha": True
+                },
+                headers={"Retry-After": str(retry_after)}
+            )
+        else:
+            raise HTTPException(
+                status_code=429,
+                detail={
+                    "error": "Rate limit exceeded",
+                    "retryAfter": retry_after
+                },
+                headers={"Retry-After": str(retry_after)}
+            )
+
+    try:
+        # Get a suitable UTXO
+        min_amount = settings.credit_amount + settings.tx_fee
+        utxos = dash_client.list_unspent()
+        utxo = get_suitable_utxo(utxos, min_amount)
+
+        if utxo is None:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "error": "No suitable UTXO available",
+                    "detail": "The faucet wallet needs to be funded"
+                }
+            )
+
+        # Get deposit address scriptPubKey for change output
+        deposit_addr = dash_client.get_deposit_address()
+        addr_info = dash_client.get_address_info(deposit_addr)
+        change_script = bytes.fromhex(addr_info["scriptPubKey"])
+
+        # Create asset lock transaction using CLIENT-PROVIDED public key
+        tx, tx_bytes = create_asset_lock_transaction(
+            utxo=utxo,
+            amount=settings.credit_amount,
+            asset_lock_pubkey=pubkey_bytes,  # Use client's public key
+            change_script_pubkey=change_script
+        )
+
+        # Sign the transaction with the wallet
+        sign_result = dash_client.sign_raw_transaction_with_wallet(tx_bytes.hex())
+
+        if not sign_result.get("complete"):
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "error": "Failed to sign transaction",
+                    "detail": str(sign_result.get("errors", []))
+                }
+            )
+
+        signed_tx_hex = sign_result["hex"]
+        signed_tx_bytes = bytes.fromhex(signed_tx_hex)
+
+        # Broadcast the transaction
+        txid = dash_client.send_raw_transaction(signed_tx_hex)
+
+        # Wait for InstantSend lock
+        try:
+            islock_bytes = await wait_for_instant_lock(txid)
+        except InstantLockTimeout:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "error": "InstantSend lock timeout",
+                    "detail": f"Transaction {txid} was broadcast but InstantLock was not received in time"
+                }
+            )
+
+        # Build the asset lock proof
+        asset_lock_proof = build_instant_asset_lock_proof(
+            transaction_bytes=signed_tx_bytes,
+            instant_lock_bytes=islock_bytes,
+            output_index=0
+        )
+
+        # Record successful request for rate limiting
+        rate_limiter.record_request(client_ip)
+
+        return AssetLockProofResponse(
+            assetLockProof=asset_lock_proof,
+            txid=txid,
+            creditsAmount=settings.credit_amount
         )
 
     except HTTPException:

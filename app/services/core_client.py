@@ -73,9 +73,35 @@ class DashCoreClient:
         """Get wallet info including balance."""
         return self._call("getwalletinfo")
 
+    def create_raw_transaction(self, inputs: list, outputs: dict) -> str:
+        """Create a raw transaction. Returns hex."""
+        return self._call("createrawtransaction", inputs, outputs)
+
+    def fund_raw_transaction(self, hex_tx: str, options: dict | None = None) -> dict[str, Any]:
+        """Fund a raw transaction. Returns dict with hex, fee, changepos."""
+        if options:
+            return self._call("fundrawtransaction", hex_tx, options)
+        return self._call("fundrawtransaction", hex_tx)
+
     def send_to_address(self, address: str, amount: float) -> str:
-        """Send DASH to an address. Returns txid."""
-        return self._call("sendtoaddress", address, amount)
+        """Send DASH to an address with change to deposit address. Returns txid."""
+        # Create raw tx with just the output
+        raw_tx = self.create_raw_transaction([], {address: amount})
+
+        # Fund it with change going to deposit address
+        deposit_addr = self.get_deposit_address()
+        funded = self.fund_raw_transaction(raw_tx, {"changeAddress": deposit_addr})
+
+        # Sign and broadcast
+        signed = self.sign_raw_transaction_with_wallet(funded["hex"])
+        if not signed.get("complete"):
+            raise Exception("Transaction signing failed")
+
+        return self.send_raw_transaction(signed["hex"])
+
+    def get_address_info(self, address: str) -> dict[str, Any]:
+        """Get information about an address including scriptPubKey."""
+        return self._call("getaddressinfo", address)
 
     def get_deposit_address(self) -> str:
         """Get the static deposit address, creating if needed."""

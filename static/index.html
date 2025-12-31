@@ -18,8 +18,19 @@
             padding: 20px;
         }
         .container {
-            max-width: 900px;
+            max-width: 1100px;
             margin: 0 auto;
+        }
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+            align-items: stretch;
+        }
+        @media (max-width: 768px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
         }
         header {
             text-align: center;
@@ -84,6 +95,7 @@
         }
         .result-section.visible {
             display: block;
+            animation: fadeIn 0.3s ease;
         }
         .field {
             margin: 20px 0;
@@ -136,19 +148,65 @@
         .error.visible {
             display: block;
         }
-        .info-box {
-            background: rgba(0, 141, 228, 0.1);
-            border: 1px solid rgba(0, 141, 228, 0.3);
+        .success-box {
+            background: rgba(40, 167, 69, 0.2);
+            border: 1px solid #28a745;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .success-box h3 {
+            color: #28a745;
+            margin-bottom: 15px;
+        }
+        .success-box .result-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        .success-box .result-item:last-child {
+            border-bottom: none;
+        }
+        .success-box .result-label {
+            color: #aaa;
+        }
+        .success-box .result-value {
+            color: #fff;
+            font-family: 'Monaco', 'Consolas', monospace;
+        }
+        .warning-box {
+            background: rgba(255, 193, 7, 0.2);
+            border: 1px solid #ffc107;
             border-radius: 8px;
             padding: 15px;
-            margin-top: 20px;
+            margin: 20px 0;
         }
-        .info-box h3 {
-            color: #008de4;
+        .warning-box h4 {
+            color: #ffc107;
             margin-bottom: 10px;
         }
-        .info-box a {
-            color: #00b3ff;
+        .key-card {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+            padding: 15px;
+            margin: 10px 0;
+        }
+        .key-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .key-card-header h4 {
+            color: #008de4;
+            font-size: 0.95rem;
+        }
+        .key-value {
+            font-family: 'Monaco', 'Consolas', monospace;
+            font-size: 0.8rem;
+            color: #ccc;
+            word-break: break-all;
         }
         .status-bar {
             text-align: center;
@@ -156,12 +214,373 @@
             color: #888;
             font-size: 0.9rem;
         }
-        .txid-link {
-            color: #00b3ff;
-            text-decoration: none;
+        .progress-text {
+            color: #008de4;
+            font-size: 0.9rem;
+            margin-top: 15px;
+            min-height: 1.2em;
         }
-        .txid-link:hover {
-            text-decoration: underline;
+        .security-note {
+            background: rgba(0, 141, 228, 0.1);
+            border: 1px solid rgba(0, 141, 228, 0.3);
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 15px;
+            font-size: 0.9rem;
+        }
+        .security-note strong {
+            color: #008de4;
+        }
+        /* Feature cards */
+        .feature-card {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 30px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: border-color 0.3s ease, box-shadow 0.3s ease;
+            display: flex;
+            flex-direction: column;
+        }
+        .feature-card:hover {
+            border-color: rgba(0, 141, 228, 0.3);
+        }
+        .feature-card.success {
+            border-color: #28a745;
+            box-shadow: 0 0 20px rgba(40, 167, 69, 0.15);
+            animation: successFlash 0.5s ease;
+        }
+        @keyframes successFlash {
+            0% { box-shadow: 0 0 0 rgba(40, 167, 69, 0); }
+            50% { box-shadow: 0 0 30px rgba(40, 167, 69, 0.4); }
+            100% { box-shadow: 0 0 20px rgba(40, 167, 69, 0.15); }
+        }
+        /* Full width states - when one card is expanded, hide the other */
+        .main-content:has(.feature-card.show-config) .feature-card:not(.show-config),
+        .main-content:has(.feature-card.show-results) .feature-card:not(.show-results) {
+            display: none;
+        }
+        .main-content:has(.feature-card.show-config) .feature-card.show-config,
+        .main-content:has(.feature-card.show-results) .feature-card.show-results {
+            grid-column: 1 / -1;
+        }
+        /* Config view */
+        .config-view {
+            display: none;
+        }
+        .feature-card.show-config .initial-view {
+            display: none;
+        }
+        .feature-card.show-config .config-view {
+            display: block;
+            animation: fadeIn 0.3s ease forwards;
+        }
+        /* Inline input + button row */
+        .input-row {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+        .input-row input {
+            flex: 1;
+            padding: 12px 15px;
+            border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.2);
+            background: rgba(0,0,0,0.3);
+            color: #e0e0e0;
+            font-size: 1rem;
+        }
+        .input-row .btn {
+            white-space: nowrap;
+        }
+        /* Back button */
+        .back-link {
+            color: #888;
+            font-size: 0.85rem;
+            cursor: pointer;
+            margin-bottom: 15px;
+            display: inline-block;
+        }
+        .back-link:hover {
+            color: #008de4;
+        }
+        /* Key configuration UI */
+        .key-config-list {
+            margin: 15px 0;
+        }
+        .key-config-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 12px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 6px;
+            margin-bottom: 8px;
+        }
+        .key-config-item input {
+            flex: 1;
+            padding: 8px 12px;
+            border-radius: 4px;
+            border: 1px solid rgba(255,255,255,0.15);
+            background: rgba(0,0,0,0.3);
+            color: #e0e0e0;
+            font-size: 0.8rem;
+            font-family: 'Monaco', 'Consolas', monospace;
+        }
+        .key-config-item .key-type {
+            color: #888;
+            font-size: 0.8rem;
+            min-width: 80px;
+        }
+        .key-config-item select {
+            padding: 8px 10px;
+            border-radius: 4px;
+            border: 1px solid rgba(255,255,255,0.15);
+            background: rgba(0,0,0,0.3);
+            color: #e0e0e0;
+            font-size: 0.8rem;
+            min-width: 100px;
+        }
+        .key-config-item .remove-key {
+            background: transparent;
+            border: none;
+            color: #666;
+            cursor: pointer;
+            padding: 4px 8px;
+            font-size: 1.2rem;
+            line-height: 1;
+        }
+        .key-config-item .remove-key:hover {
+            color: #dc3545;
+        }
+        .add-key-btn {
+            background: transparent;
+            border: 1px dashed rgba(255,255,255,0.2);
+            color: #888;
+            padding: 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            width: 100%;
+            font-size: 0.9rem;
+            transition: all 0.2s ease;
+        }
+        .add-key-btn:hover {
+            border-color: #008de4;
+            color: #008de4;
+        }
+        .feature-card h2 {
+            color: #008de4;
+            margin-bottom: 10px;
+            font-size: 1.4rem;
+        }
+        .feature-card .description {
+            color: #aaa;
+            margin-bottom: 20px;
+            font-size: 0.95rem;
+        }
+        .feature-card .card-bottom {
+            margin-top: auto;
+            padding-top: 20px;
+        }
+        /* Initial view and results view toggle */
+        .initial-view, .results-view {
+            transition: opacity 0.3s ease;
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+        }
+        .results-view {
+            display: none;
+            opacity: 0;
+        }
+        .feature-card.show-results .initial-view,
+        .feature-card.show-results .config-view {
+            display: none;
+        }
+        .feature-card.show-results .results-view {
+            display: block;
+            animation: fadeIn 0.3s ease forwards;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        /* Collapsible key sections */
+        .key-section {
+            margin: 10px 0;
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+        }
+        .key-section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 15px;
+            cursor: pointer;
+            transition: background 0.2s ease;
+        }
+        .key-section-header:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+        .key-section-header h4 {
+            color: #008de4;
+            font-size: 0.9rem;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .key-section-header .toggle-icon {
+            transition: transform 0.2s ease;
+            color: #666;
+        }
+        .key-section.expanded .toggle-icon {
+            transform: rotate(180deg);
+        }
+        .key-section-content {
+            display: none;
+            padding: 0 15px 15px;
+        }
+        .key-section.expanded .key-section-content {
+            display: block;
+            animation: slideDown 0.2s ease;
+        }
+        @keyframes slideDown {
+            from { opacity: 0; transform: translateY(-5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .key-section-content .key-value {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 4px;
+            padding: 10px;
+            font-family: 'Monaco', 'Consolas', monospace;
+            font-size: 0.8rem;
+            word-break: break-all;
+            color: #ccc;
+        }
+        .key-section-content .key-card {
+            background: rgba(0, 0, 0, 0.15);
+            border-radius: 6px;
+            padding: 12px;
+            margin: 8px 0;
+        }
+        .key-section-content .key-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .key-section-content .key-card-header h4 {
+            color: #aaa;
+            font-size: 0.85rem;
+            margin: 0;
+            font-weight: 500;
+        }
+        .key-section-content .key-card .key-value {
+            margin: 0;
+            padding: 8px;
+            font-size: 0.75rem;
+        }
+        /* Compact result stats */
+        .result-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin: 15px 0;
+        }
+        .stat-item {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 6px;
+            padding: 10px 12px;
+        }
+        .stat-label {
+            color: #888;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .stat-value {
+            color: #fff;
+            font-family: 'Monaco', 'Consolas', monospace;
+            font-size: 0.9rem;
+            margin-top: 4px;
+        }
+        /* Footer styling */
+        .site-footer {
+            margin-top: 40px;
+            padding: 20px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            text-align: center;
+        }
+        .footer-status {
+            color: #888;
+            font-size: 0.85rem;
+            margin-bottom: 10px;
+        }
+        .footer-fund {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            color: #666;
+            font-size: 0.8rem;
+            flex-wrap: wrap;
+        }
+        .footer-fund-address {
+            font-family: 'Monaco', 'Consolas', monospace;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            color: #aaa;
+        }
+        .footer-fund .copy-btn {
+            padding: 4px 10px;
+            font-size: 0.7rem;
+        }
+        /* Action buttons row */
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+            flex-wrap: wrap;
+        }
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.1);
+            color: #ccc;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            padding: 12px 24px;
+            font-size: 1rem;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.15);
+            color: #fff;
+        }
+        /* Identity ID display */
+        .identity-id-display {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 6px;
+            padding: 10px 15px;
+            font-family: 'Monaco', 'Consolas', monospace;
+            font-size: 0.8rem;
+            word-break: break-all;
+            color: #ccc;
+            margin: 10px 0;
+        }
+        /* Input styling */
+        input[type="text"] {
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #008de4 !important;
+            box-shadow: 0 0 0 3px rgba(0, 141, 228, 0.15);
+        }
+        input[type="text"]::placeholder {
+            color: #666;
         }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/@cap.js/widget" defer></script>
@@ -170,129 +589,189 @@
     <div class="container">
         <header>
             <h1>Dash Testnet Faucet</h1>
-            <p class="subtitle">Get testnet DASH and identity credentials</p>
+            <p class="subtitle">Get testnet DASH or create Platform identities</p>
         </header>
 
-        <!-- Core Faucet Section -->
-        <div class="card">
-            <h2 style="margin-bottom: 15px; color: #008de4;">Core Wallet Faucet</h2>
-            <p style="margin-bottom: 20px; color: #aaa;">
-                Enter your testnet address to receive <span id="coreFaucetAmountDisplay">1</span> tDash
-            </p>
-            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                <input type="text" id="addressInput" placeholder="Enter your testnet Dash address (y...)"
-                    style="flex: 1; min-width: 250px; padding: 12px 15px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.3); color: #e0e0e0; font-size: 1rem;">
-                <button class="btn" id="coreFaucetBtn" onclick="requestCoreFaucet()">
-                    <span class="spinner"></span>
-                    <span class="btn-text">Get tDash</span>
-                </button>
-            </div>
-            <div class="result-section" id="coreResults" style="margin-top: 20px;">
-                <div class="field" style="margin: 0;">
-                    <div class="field-label">
-                        <span>Transaction ID</span>
-                        <button class="copy-btn" onclick="copyField('coreTxid')">Copy</button>
-                    </div>
-                    <div class="field-value" id="coreTxid"></div>
-                </div>
-            </div>
-        </div>
-
-        <div class="error" id="coreErrorBox"></div>
-
-        <!-- Identity Faucet Section -->
-        <div class="card" style="text-align: center;">
-            <h2 style="margin-bottom: 15px; color: #008de4;">Platform Identity Package</h2>
-            <p style="margin-bottom: 20px; color: #aaa;">
-                Get everything you need to create a Platform identity on testnet
-            </p>
-            <button class="btn" id="faucetBtn" onclick="requestIdentity()">
-                <span class="spinner"></span>
-                <span class="btn-text">Get Identity Package</span>
-            </button>
-        </div>
-
-        <div class="error" id="errorBox"></div>
-
-        <div class="result-section" id="results">
-            <div class="card">
-                <h2 style="margin-bottom: 20px; color: #008de4;">Your Identity Package</h2>
-
-                <div class="field">
-                    <div class="field-label">
-                        <span>Transaction ID</span>
-                        <button class="copy-btn" onclick="copyField('txid')">Copy</button>
-                    </div>
-                    <div class="field-value" id="txid"></div>
-                </div>
-
-                <div class="field">
-                    <div class="field-label">
-                        <span>Asset Lock Proof</span>
-                        <button class="copy-btn" onclick="copyField('assetLockProof')">Copy</button>
-                    </div>
-                    <div class="field-value" id="assetLockProof"></div>
-                </div>
-
-                <div class="field">
-                    <div class="field-label">
-                        <span>Asset Lock Proof Private Key (WIF)</span>
-                        <button class="copy-btn" onclick="copyField('assetLockProofPrivateKey')">Copy</button>
-                    </div>
-                    <div class="field-value" id="assetLockProofPrivateKey"></div>
-                </div>
-
-                <div class="field">
-                    <div class="field-label">
-                        <span>Public Keys (JSON)</span>
-                        <button class="copy-btn" onclick="copyField('publicKeys')">Copy</button>
-                    </div>
-                    <div class="field-value" id="publicKeys"></div>
-                </div>
-
-                <div class="field">
-                    <div class="field-label">
-                        <span>Credits Amount</span>
-                    </div>
-                    <div class="field-value" id="creditsAmount"></div>
-                </div>
-
-                <div class="info-box">
-                    <h3>Next Steps</h3>
-                    <p>Use the data above to create your identity on the
-                        <a href="https://dashpay.github.io/evo-sdk-website/" target="_blank">Dash Platform Evo SDK Website</a>:
+        <div class="main-content">
+            <!-- Core Faucet Section -->
+            <div class="feature-card" id="coreFaucetCard">
+                <!-- Initial View -->
+                <div class="initial-view">
+                    <h2>Core Wallet Faucet</h2>
+                    <p class="description">
+                        Get <span id="coreFaucetAmountDisplay">1</span> tDash sent to your testnet address.
                     </p>
-                    <ol style="margin: 10px 0 0 20px; line-height: 1.8;">
-                        <li>Go to the "Identity Create" operation</li>
-                        <li>Paste the <strong>Asset Lock Proof</strong></li>
-                        <li>Paste the <strong>Asset Lock Proof Private Key</strong></li>
-                        <li>Paste the <strong>Public Keys</strong> JSON</li>
-                        <li>Click Execute</li>
-                    </ol>
+                    <div class="card-bottom">
+                        <button class="btn" onclick="showCoreFaucetConfig()">
+                            <span class="btn-text">Get tDash</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Config View -->
+                <div class="config-view">
+                    <span class="back-link" onclick="resetCoreFaucetCard()">&larr; Back</span>
+                    <h2>Core Wallet Faucet</h2>
+                    <p class="description">Enter your testnet address to receive tDash.</p>
+                    <div class="input-row">
+                        <input type="text" id="addressInput" placeholder="Enter your testnet Dash address (y...)">
+                        <button class="btn" id="coreFaucetBtn" onclick="requestCoreFaucet()">
+                            <span class="spinner"></span>
+                            <span class="btn-text">Send</span>
+                        </button>
+                    </div>
+                    <div class="error" id="coreErrorBox"></div>
+                </div>
+
+                <!-- Results View -->
+                <div class="results-view">
+                    <h2 style="color: #28a745;">tDash Sent!</h2>
+                    <div class="stat-item" style="margin: 15px 0;">
+                        <div class="stat-label">Transaction ID</div>
+                        <div class="stat-value" id="coreTxid" style="word-break: break-all;"></div>
+                    </div>
+                    <button class="copy-btn" onclick="copyField('coreTxid')" style="margin-bottom: 20px;">Copy Transaction ID</button>
+                    <div class="action-buttons">
+                        <button class="btn-secondary" onclick="resetCoreFaucetCard()">Send More</button>
+                    </div>
                 </div>
             </div>
-        </div>
 
-        <div class="card" id="fundingCard" style="display: none;">
-            <h3 style="color: #008de4; margin-bottom: 10px;">Fund This Faucet</h3>
-            <p style="color: #aaa; margin-bottom: 15px;">Send testnet DASH to the address below:</p>
-            <div class="field" style="margin: 0;">
-                <div class="field-label">
-                    <span>Deposit Address</span>
-                    <button class="copy-btn" onclick="copyDepositAddress()">Copy</button>
+            <!-- Identity Creation Section -->
+            <div class="feature-card" id="identityCard">
+                <!-- Initial View -->
+                <div class="initial-view">
+                    <h2>Create Platform Identity</h2>
+                    <p class="description">
+                        One-click identity creation. Keys generated locally.
+                    </p>
+                    <div class="card-bottom">
+                        <button class="btn" onclick="showIdentityConfig()">
+                            <span class="btn-text">Create Identity</span>
+                        </button>
+                    </div>
                 </div>
-                <div class="field-value" id="depositAddress" style="text-align: center; font-size: 1rem;"></div>
-            </div>
-        </div>
 
-        <div class="status-bar" id="statusBar">
-            Loading faucet status...
-        </div>
+                <!-- Config View -->
+                <div class="config-view">
+                    <span class="back-link" onclick="resetIdentityCard()">&larr; Back</span>
+                    <h2>Configure Identity Keys</h2>
+                    <p class="description">Customize the keys for your identity. Default keys are pre-filled.</p>
+                    <div class="key-config-list" id="keyConfigList">
+                        <!-- Keys will be populated by JavaScript -->
+                    </div>
+                    <button class="add-key-btn" onclick="addKeyConfig()">+ Add Key</button>
+                    <div class="card-bottom">
+                        <button class="btn" id="identityBtn" onclick="createIdentity()">
+                            <span class="spinner"></span>
+                            <span class="btn-text">Create Identity</span>
+                        </button>
+                    </div>
+                    <div class="error" id="identityErrorBox"></div>
+                </div>
+
+                <!-- Results View (shown after success) -->
+                <div class="results-view">
+                    <h2 style="color: #28a745;">Identity Created</h2>
+                    <div class="stat-item" style="margin-bottom: 15px;">
+                        <div class="stat-label">Identity ID</div>
+                        <div class="stat-value" id="identityIdDisplay" style="word-break: break-all;"></div>
+                    </div>
+
+                    <div class="result-stats">
+                        <div class="stat-item">
+                            <div class="stat-label">Balance</div>
+                            <div class="stat-value" id="identityBalance"></div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">Revision</div>
+                            <div class="stat-value" id="identityRevision"></div>
+                        </div>
+                    </div>
+
+                    <div class="warning-box" style="margin: 15px 0;">
+                        <h4>Save Your Private Keys!</h4>
+                        <p style="color: #ccc; font-size: 0.85rem;">
+                            These keys control your identity. Store them securely - they cannot be recovered.
+                        </p>
+                    </div>
+
+                    <!-- Collapsible Asset Lock Key -->
+                    <div class="key-section" id="assetLockSection">
+                        <div class="key-section-header" onclick="toggleKeySection('assetLockSection')">
+                            <h4><span class="toggle-icon">▼</span> Asset Lock Key</h4>
+                            <button class="copy-btn" onclick="copyFieldStop(event, 'assetLockKey')">Copy</button>
+                        </div>
+                        <div class="key-section-content">
+                            <div class="key-value" id="assetLockKey"></div>
+                        </div>
+                    </div>
+
+                    <!-- Collapsible Identity Keys -->
+                    <div class="key-section" id="identityKeysSection">
+                        <div class="key-section-header" onclick="toggleKeySection('identityKeysSection')">
+                            <h4><span class="toggle-icon">▼</span> Identity Keys (<span id="identityKeyCount">0</span>)</h4>
+                            <button class="copy-btn" onclick="copyAllIdentityKeysStop(event)">Copy All</button>
+                        </div>
+                        <div class="key-section-content" id="identityKeysContainer"></div>
+                    </div>
+
+                    <div class="action-buttons">
+                        <button class="btn" onclick="copyField('allKeysJson')" style="flex: 1;">
+                            Copy All Keys (JSON)
+                        </button>
+                        <button class="btn-secondary" onclick="resetIdentityCard()">
+                            Create Another
+                        </button>
+                    </div>
+
+                    <!-- Hidden JSON for copy -->
+                    <div id="allKeysJson" style="display: none;"></div>
+                </div>
+            </div>
+        </div><!-- end main-content -->
+
+        <footer class="site-footer">
+            <div class="footer-status" id="statusBar">
+                Loading faucet status...
+            </div>
+            <div class="footer-fund" id="fundingSection" style="display: none;">
+                <span>Help fund this faucet:</span>
+                <span class="footer-fund-address" id="depositAddress"></span>
+                <button class="copy-btn" onclick="copyDepositAddress()">Copy</button>
+            </div>
+        </footer>
     </div>
+
+    <script type="module">
+        // Import SDK and key generation utilities
+        import { EvoSDK } from '/static/dist/evo-sdk.module.js';
+        import { generateIdentityKeys } from '/static/js/keys.js';
+
+        // Make functions available globally
+        window.EvoSDK = EvoSDK;
+        window.generateIdentityKeys = generateIdentityKeys;
+
+        // Signal that modules are loaded
+        window.modulesLoaded = true;
+        window.dispatchEvent(new Event('modulesLoaded'));
+    </script>
 
     <script>
         let capEnabled = false;
         let hardCapEnabled = false;
+        let modulesReady = false;
+
+        // Wait for modules to load
+        function waitForModules() {
+            return new Promise((resolve) => {
+                if (window.modulesLoaded) {
+                    resolve();
+                } else {
+                    window.addEventListener('modulesLoaded', resolve, { once: true });
+                }
+            });
+        }
 
         async function solveCap(btn, label, hard = false) {
             const endpoint = hard ? window.hardCapEndpoint : window.capEndpoint;
@@ -322,10 +801,195 @@
             }
         }
 
+        async function createIdentity() {
+            const btn = document.getElementById('identityBtn');
+            const errorBox = document.getElementById('identityErrorBox');
+            const card = document.getElementById('identityCard');
+
+            btn.classList.add('loading');
+            btn.disabled = true;
+            errorBox.classList.remove('visible');
+            card.classList.remove('show-results', 'success');
+
+            try {
+                // Wait for modules to load
+                btn.querySelector('.btn-text').textContent = 'Loading...';
+                await waitForModules();
+
+                // Use pre-configured keys from the config view
+                if (!assetLockKeyConfig || keyConfigs.length === 0) {
+                    throw new Error('No keys configured. Please go back and configure keys.');
+                }
+
+                const keys = {
+                    assetLock: assetLockKeyConfig,
+                    identityKeys: keyConfigs
+                };
+                console.log('Using configured keys (private keys never leave browser)');
+
+                // Step 2: Solve captcha
+                const capToken = await solveCap(btn, 'Create Identity');
+
+                // Step 3: Get asset lock proof from server (send only PUBLIC key)
+                btn.querySelector('.btn-text').textContent = 'Creating proof...';
+
+                const body = {
+                    assetLockPublicKey: keys.assetLock.publicKeyHex
+                };
+                if (capToken) {
+                    body.capToken = capToken;
+                }
+
+                let response = await fetch('/api/asset-lock-proof', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+
+                let data = await response.json();
+
+                // Handle rate limit with hard captcha bypass
+                if (response.status === 429 && data.detail?.requiresHardCaptcha) {
+                    const hardCapToken = await solveCap(btn, 'Create Identity', true);
+                    if (hardCapToken) {
+                        body.hardCapToken = hardCapToken;
+                        btn.querySelector('.btn-text').textContent = 'Creating proof...';
+
+                        response = await fetch('/api/asset-lock-proof', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(body)
+                        });
+                        data = await response.json();
+                    }
+                }
+
+                if (!response.ok) {
+                    throw new Error(data.detail?.error || data.detail || 'Failed to create asset lock proof');
+                }
+
+                // Step 4: Initialize SDK and create identity
+                btn.querySelector('.btn-text').textContent = 'Connecting...';
+
+                if (!window.EvoSDK) {
+                    throw new Error('SDK not loaded. Please refresh the page.');
+                }
+
+                const client = new window.EvoSDK({ network: 'testnet' });
+                await client.connect();
+
+                btn.querySelector('.btn-text').textContent = 'Registering...';
+
+                // Create identity using LOCAL private keys
+                // WASM SDK expects: keyType, purpose, securityLevel as strings, privateKeyHex
+                const publicKeysForSdk = keys.identityKeys.map(k => ({
+                    keyType: k.keyType,
+                    purpose: k.purpose,
+                    securityLevel: k.securityLevel,
+                    privateKeyHex: k.privateKeyHex
+                }));
+                console.log('DEBUG - Raw keys from generator:', JSON.stringify(keys.identityKeys[0], null, 2));
+                console.log('DEBUG - Mapped keys for SDK:', JSON.stringify(publicKeysForSdk, null, 2));
+                console.log('DEBUG - Asset lock proof (first 100 chars):', data.assetLockProof.substring(0, 100));
+
+                const identity = await client.identities.create({
+                    assetLockProof: data.assetLockProof,
+                    assetLockPrivateKeyWif: keys.assetLock.privateKeyWif,
+                    publicKeys: JSON.stringify(publicKeysForSdk)
+                });
+
+                console.log('DEBUG - Identity result:', identity);
+                console.log('DEBUG - Identity type:', typeof identity);
+                console.log('DEBUG - Identity keys:', Object.keys(identity || {}));
+
+                // Step 5: Display results in-place
+
+                document.getElementById('identityIdDisplay').textContent = identity.identityId;
+                document.getElementById('identityBalance').textContent =
+                    `${(identity.balance / 100000000000).toFixed(4)} DASH`;
+                document.getElementById('identityRevision').textContent = identity.revision;
+                document.getElementById('identityKeyCount').textContent = identity.publicKeys;
+
+                // Display asset lock key
+                document.getElementById('assetLockKey').textContent = keys.assetLock.privateKeyWif;
+
+                // Display identity keys
+                const keysContainer = document.getElementById('identityKeysContainer');
+                keysContainer.innerHTML = '';
+                keys.identityKeys.forEach(key => {
+                    const keyCard = document.createElement('div');
+                    keyCard.className = 'key-card';
+
+                    const header = document.createElement('div');
+                    header.className = 'key-card-header';
+
+                    const title = document.createElement('h4');
+                    title.textContent = `${key._name} (ID: ${key.id})`;
+
+                    const copyBtn = document.createElement('button');
+                    copyBtn.className = 'copy-btn';
+                    copyBtn.textContent = 'Copy';
+                    copyBtn.addEventListener('click', async (e) => {
+                        e.stopPropagation();
+                        try {
+                            await navigator.clipboard.writeText(key.privateKeyWif);
+                            copyBtn.textContent = 'Copied!';
+                            copyBtn.classList.add('copied');
+                            setTimeout(() => {
+                                copyBtn.textContent = 'Copy';
+                                copyBtn.classList.remove('copied');
+                            }, 2000);
+                        } catch (err) {
+                            console.error('Failed to copy:', err);
+                        }
+                    });
+
+                    header.appendChild(title);
+                    header.appendChild(copyBtn);
+
+                    const keyValue = document.createElement('div');
+                    keyValue.className = 'key-value';
+                    keyValue.textContent = key.privateKeyWif;
+
+                    keyCard.appendChild(header);
+                    keyCard.appendChild(keyValue);
+                    keysContainer.appendChild(keyCard);
+                });
+
+                // All keys as JSON for backup
+                const allKeys = {
+                    identityId: identity.identityId,
+                    assetLockKey: keys.assetLock.privateKeyWif,
+                    identityKeys: keys.identityKeys.map(k => ({
+                        name: k._name,
+                        id: k.id,
+                        purpose: k.purpose,
+                        securityLevel: k.securityLevel,
+                        privateKeyWif: k.privateKeyWif
+                    }))
+                };
+                document.getElementById('allKeysJson').textContent = JSON.stringify(allKeys, null, 2);
+
+                // Show results view in-place
+                card.classList.remove('show-config');
+                card.classList.add('show-results', 'success');
+                card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+            } catch (error) {
+                console.error('Identity creation failed:', error);
+                errorBox.textContent = error.message;
+                errorBox.classList.add('visible');
+            } finally {
+                btn.classList.remove('loading');
+                btn.disabled = false;
+                btn.querySelector('.btn-text').textContent = 'Create Identity';
+            }
+        }
+
         async function requestCoreFaucet() {
+            const card = document.getElementById('coreFaucetCard');
             const btn = document.getElementById('coreFaucetBtn');
             const errorBox = document.getElementById('coreErrorBox');
-            const results = document.getElementById('coreResults');
             const addressInput = document.getElementById('addressInput');
 
             const address = addressInput.value.trim();
@@ -338,10 +1002,9 @@
             btn.classList.add('loading');
             btn.disabled = true;
             errorBox.classList.remove('visible');
-            results.classList.remove('visible');
 
             try {
-                const capToken = await solveCap(btn, 'Get tDash');
+                const capToken = await solveCap(btn, 'Send');
                 btn.querySelector('.btn-text').textContent = 'Sending...';
 
                 const body = { address };
@@ -357,9 +1020,8 @@
 
                 let data = await response.json();
 
-                // Handle rate limit with hard captcha bypass
                 if (response.status === 429 && data.detail?.requiresHardCaptcha) {
-                    const hardCapToken = await solveCap(btn, 'Get tDash', true);
+                    const hardCapToken = await solveCap(btn, 'Send', true);
                     if (hardCapToken) {
                         body.hardCapToken = hardCapToken;
                         btn.querySelector('.btn-text').textContent = 'Sending...';
@@ -378,7 +1040,8 @@
                 }
 
                 document.getElementById('coreTxid').textContent = data.txid;
-                results.classList.add('visible');
+                card.classList.remove('show-config');
+                card.classList.add('show-results', 'success');
                 addressInput.value = '';
 
             } catch (error) {
@@ -387,74 +1050,7 @@
             } finally {
                 btn.classList.remove('loading');
                 btn.disabled = false;
-                btn.querySelector('.btn-text').textContent = 'Get tDash';
-            }
-        }
-
-        async function requestIdentity() {
-            const btn = document.getElementById('faucetBtn');
-            const errorBox = document.getElementById('errorBox');
-            const results = document.getElementById('results');
-
-            btn.classList.add('loading');
-            btn.disabled = true;
-            errorBox.classList.remove('visible');
-            results.classList.remove('visible');
-
-            try {
-                const capToken = await solveCap(btn, 'Get Identity Package');
-                btn.querySelector('.btn-text').textContent = 'Creating...';
-
-                const body = {};
-                if (capToken) {
-                    body.capToken = capToken;
-                }
-
-                let response = await fetch('/api/faucet', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(body)
-                });
-
-                let data = await response.json();
-
-                // Handle rate limit with hard captcha bypass
-                if (response.status === 429 && data.detail?.requiresHardCaptcha) {
-                    const hardCapToken = await solveCap(btn, 'Get Identity Package', true);
-                    if (hardCapToken) {
-                        body.hardCapToken = hardCapToken;
-                        btn.querySelector('.btn-text').textContent = 'Creating...';
-
-                        response = await fetch('/api/faucet', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(body)
-                        });
-                        data = await response.json();
-                    }
-                }
-
-                if (!response.ok) {
-                    throw new Error(data.detail?.error || data.detail || 'Request failed');
-                }
-
-                document.getElementById('txid').textContent = data.txid;
-                document.getElementById('assetLockProof').textContent = data.assetLockProof;
-                document.getElementById('assetLockProofPrivateKey').textContent = data.assetLockProofPrivateKey;
-                document.getElementById('publicKeys').textContent = JSON.stringify(data.publicKeys, null, 2);
-                document.getElementById('creditsAmount').textContent =
-                    `${data.creditsAmount} duffs (${data.creditsAmount / 100000000} DASH)`;
-
-                results.classList.add('visible');
-                results.scrollIntoView({ behavior: 'smooth' });
-
-            } catch (error) {
-                errorBox.textContent = error.message;
-                errorBox.classList.add('visible');
-            } finally {
-                btn.classList.remove('loading');
-                btn.disabled = false;
-                btn.querySelector('.btn-text').textContent = 'Get Identity Package';
+                btn.querySelector('.btn-text').textContent = 'Send';
             }
         }
 
@@ -464,6 +1060,20 @@
 
             try {
                 await navigator.clipboard.writeText(field.textContent);
+                btn.textContent = 'Copied!';
+                btn.classList.add('copied');
+                setTimeout(() => {
+                    btn.textContent = 'Copy';
+                    btn.classList.remove('copied');
+                }, 2000);
+            } catch (err) {
+                console.error('Failed to copy:', err);
+            }
+        }
+
+        async function copyText(text, btn) {
+            try {
+                await navigator.clipboard.writeText(text);
                 btn.textContent = 'Copied!';
                 btn.classList.add('copied');
                 setTimeout(() => {
@@ -492,6 +1102,178 @@
             }
         }
 
+        function toggleKeySection(sectionId) {
+            const section = document.getElementById(sectionId);
+            section.classList.toggle('expanded');
+        }
+
+        // Key configurations with actual generated keys
+        let keyConfigs = [];
+        let assetLockKeyConfig = null;
+
+        function showCoreFaucetConfig() {
+            const card = document.getElementById('coreFaucetCard');
+            card.classList.add('show-config');
+            document.getElementById('addressInput').focus();
+        }
+
+        function resetCoreFaucetCard() {
+            const card = document.getElementById('coreFaucetCard');
+            card.classList.remove('show-config', 'show-results', 'success');
+            document.getElementById('addressInput').value = '';
+            document.getElementById('coreErrorBox').classList.remove('visible');
+        }
+
+        async function showIdentityConfig() {
+            const card = document.getElementById('identityCard');
+            card.classList.add('show-config');
+
+            // Wait for modules to load
+            await waitForModules();
+
+            // Generate actual keys
+            if (window.generateIdentityKeys) {
+                const generatedKeys = window.generateIdentityKeys();
+                assetLockKeyConfig = generatedKeys.assetLock;
+                keyConfigs = generatedKeys.identityKeys.map(k => ({
+                    ...k,
+                    privateKeyWif: k.privateKeyWif
+                }));
+            } else {
+                // Fallback if key generation not available
+                keyConfigs = [];
+                assetLockKeyConfig = null;
+            }
+
+            renderKeyConfigs();
+        }
+
+        function resetIdentityCard() {
+            const card = document.getElementById('identityCard');
+            card.classList.remove('show-config', 'show-results', 'success');
+            document.getElementById('identityErrorBox').classList.remove('visible');
+            keyConfigs = [];
+            assetLockKeyConfig = null;
+            // Reset collapsible sections
+            document.getElementById('assetLockSection')?.classList.remove('expanded');
+            document.getElementById('identityKeysSection')?.classList.remove('expanded');
+        }
+
+        function renderKeyConfigs() {
+            const container = document.getElementById('keyConfigList');
+            container.innerHTML = '';
+            keyConfigs.forEach((key, index) => {
+                const item = document.createElement('div');
+                item.className = 'key-config-item';
+
+                // Purpose dropdown
+                const purposeSelect = document.createElement('select');
+                ['AUTHENTICATION', 'TRANSFER', 'VOTING', 'OWNER'].forEach(p => {
+                    const opt = document.createElement('option');
+                    opt.value = p;
+                    opt.textContent = p.substring(0, 6);
+                    if (key.purpose === p) opt.selected = true;
+                    purposeSelect.appendChild(opt);
+                });
+                purposeSelect.addEventListener('change', (e) => updateKeyPurpose(index, e.target.value));
+
+                // Private key input
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.value = key.privateKeyWif || '';
+                input.placeholder = 'Private key (WIF format)';
+                input.addEventListener('change', (e) => updateKeyWif(index, e.target.value));
+
+                // Security level dropdown
+                const levelSelect = document.createElement('select');
+                ['MASTER', 'CRITICAL', 'HIGH', 'MEDIUM'].forEach(l => {
+                    const opt = document.createElement('option');
+                    opt.value = l;
+                    opt.textContent = l;
+                    if (key.securityLevel === l) opt.selected = true;
+                    levelSelect.appendChild(opt);
+                });
+                levelSelect.addEventListener('change', (e) => updateKeyLevel(index, e.target.value));
+
+                const removeBtn = document.createElement('button');
+                removeBtn.className = 'remove-key';
+                removeBtn.innerHTML = '&times;';
+                removeBtn.addEventListener('click', () => removeKeyConfig(index));
+
+                item.appendChild(purposeSelect);
+                item.appendChild(input);
+                item.appendChild(levelSelect);
+                item.appendChild(removeBtn);
+                container.appendChild(item);
+            });
+        }
+
+        function updateKeyPurpose(index, purpose) {
+            keyConfigs[index].purpose = purpose;
+        }
+
+        function updateKeyLevel(index, level) {
+            keyConfigs[index].securityLevel = level;
+        }
+
+        function updateKeyWif(index, wif) {
+            keyConfigs[index].privateKeyWif = wif;
+        }
+
+        function removeKeyConfig(index) {
+            keyConfigs.splice(index, 1);
+            renderKeyConfigs();
+        }
+
+        function addKeyConfig() {
+            // Generate a new key
+            if (window.generateIdentityKeys) {
+                const newKeys = window.generateIdentityKeys();
+                if (newKeys.identityKeys.length > 0) {
+                    const newKey = newKeys.identityKeys[0];
+                    keyConfigs.push({
+                        ...newKey,
+                        purpose: 'AUTHENTICATION',
+                        securityLevel: 'HIGH'
+                    });
+                }
+            }
+            renderKeyConfigs();
+        }
+
+        async function copyAllIdentityKeys(btn) {
+            const keysJson = document.getElementById('allKeysJson').textContent;
+
+            try {
+                const allKeys = JSON.parse(keysJson);
+                const identityKeysOnly = allKeys.identityKeys.map(k => k.privateKeyWif).join('\n');
+                await navigator.clipboard.writeText(identityKeysOnly);
+                btn.textContent = 'Copied!';
+                btn.classList.add('copied');
+                setTimeout(() => {
+                    btn.textContent = 'Copy All';
+                    btn.classList.remove('copied');
+                }, 2000);
+            } catch (err) {
+                console.error('Failed to copy:', err);
+                btn.textContent = 'Failed';
+                setTimeout(() => {
+                    btn.textContent = 'Copy All';
+                }, 2000);
+            }
+        }
+
+        // Wrapper functions to handle event propagation properly
+        function copyFieldStop(e, fieldId) {
+            e.stopPropagation();
+            copyField(fieldId);
+        }
+
+        function copyAllIdentityKeysStop(e) {
+            e.stopPropagation();
+            copyAllIdentityKeys(e.target);
+        }
+
         async function loadStatus() {
             try {
                 const response = await fetch('/api/status');
@@ -507,7 +1289,7 @@
 
                     if (data.depositAddress) {
                         document.getElementById('depositAddress').textContent = data.depositAddress;
-                        document.getElementById('fundingCard').style.display = 'block';
+                        document.getElementById('fundingSection').style.display = 'flex';
                     }
 
                     if (data.coreFaucetAmount) {
@@ -531,6 +1313,27 @@
                 document.getElementById('statusBar').textContent = 'Could not load faucet status';
             }
         }
+
+        // Make functions globally available
+        window.createIdentity = createIdentity;
+        window.requestCoreFaucet = requestCoreFaucet;
+        window.copyField = copyField;
+        window.copyText = copyText;
+        window.copyDepositAddress = copyDepositAddress;
+        window.toggleKeySection = toggleKeySection;
+        window.resetIdentityCard = resetIdentityCard;
+        window.copyAllIdentityKeys = copyAllIdentityKeys;
+        window.copyFieldStop = copyFieldStop;
+        window.copyAllIdentityKeysStop = copyAllIdentityKeysStop;
+        window.showCoreFaucetConfig = showCoreFaucetConfig;
+        window.resetCoreFaucetCard = resetCoreFaucetCard;
+        window.showIdentityConfig = showIdentityConfig;
+        window.renderKeyConfigs = renderKeyConfigs;
+        window.updateKeyWif = updateKeyWif;
+        window.updateKeyPurpose = updateKeyPurpose;
+        window.updateKeyLevel = updateKeyLevel;
+        window.removeKeyConfig = removeKeyConfig;
+        window.addKeyConfig = addKeyConfig;
 
         // Load status on page load
         loadStatus();

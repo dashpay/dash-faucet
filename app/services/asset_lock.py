@@ -158,7 +158,8 @@ def create_asset_lock_transaction(
     utxo: dict[str, Any],
     amount: int,
     asset_lock_pubkey: bytes,
-    fee: int | None = None
+    fee: int | None = None,
+    change_script_pubkey: bytes | None = None
 ) -> tuple[CTransaction, bytes]:
     """Create an asset lock transaction.
 
@@ -167,6 +168,7 @@ def create_asset_lock_transaction(
         amount: Amount to lock in duffs
         asset_lock_pubkey: Compressed public key for the credit output (33 bytes)
         fee: Transaction fee in duffs (default from settings)
+        change_script_pubkey: Script for change output (default: UTXO's script)
 
     Returns:
         Tuple of (transaction, serialized_bytes)
@@ -200,8 +202,8 @@ def create_asset_lock_transaction(
 
     # Add change output if needed
     if change_amount > 0:
-        # Use the UTXO's script for change (will be signed by wallet)
-        change_script = bytes.fromhex(utxo["scriptPubKey"])
+        # Use provided change script or fall back to UTXO's script
+        change_script = change_script_pubkey or bytes.fromhex(utxo["scriptPubKey"])
         change_output = CTxOut(
             value=change_amount,
             script_pubkey=change_script
