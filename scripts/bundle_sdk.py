@@ -68,6 +68,8 @@ def bundle_key_utils() -> bool:
 // This file is bundled by esbuild
 
 import * as secp256k1 from '@noble/secp256k1';
+import { sha256 } from '@noble/hashes/sha256';
+import { ripemd160 } from '@noble/hashes/ripemd160';
 import bs58check from 'bs58check';
 
 // Generate a random private key (32 bytes)
@@ -78,6 +80,11 @@ function generatePrivateKey() {
 // Get compressed public key (33 bytes)
 function getPublicKey(privateKey) {
     return secp256k1.getPublicKey(privateKey, true);
+}
+
+// Compute HASH160 (RIPEMD160(SHA256(data)))
+function hash160(data) {
+    return ripemd160(sha256(data));
 }
 
 // Convert private key to WIF (testnet)
@@ -104,9 +111,51 @@ function toHex(bytes) {
     return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
+// Supported key types
+export const KEY_TYPES = {
+    ECDSA_SECP256K1: 'ECDSA_SECP256K1',  // Full 33-byte compressed public key
+    ECDSA_HASH160: 'ECDSA_HASH160',       // 20-byte RIPEMD160(SHA256(pubkey))
+};
+
+// Generate a single key with specified parameters
+export function generateKey(options = {}) {
+    const {
+        keyType = 'ECDSA_SECP256K1',
+        purpose = 'AUTHENTICATION',
+        securityLevel = 'HIGH',
+        name = 'Key'
+    } = options;
+
+    const priv = generatePrivateKey();
+    const pub = getPublicKey(priv);
+
+    // Determine the data field based on key type
+    let data;
+    if (keyType === 'ECDSA_HASH160') {
+        // For HASH160, store the 20-byte hash of the public key
+        const pubHash = hash160(pub);
+        data = toBase64(pubHash);
+    } else {
+        // For ECDSA_SECP256K1, store the full 33-byte compressed public key
+        data = toBase64(pub);
+    }
+
+    return {
+        keyType,
+        purpose,
+        securityLevel,
+        data,
+        readOnly: false,
+        privateKeyHex: toHex(priv),
+        privateKeyWif: toWIF(priv),
+        publicKeyHex: toHex(pub),  // Always include full public key for reference
+        _name: name
+    };
+}
+
 // Generate all keys needed for identity creation
-export function generateIdentityKeys() {
-    // Asset lock key (one-time)
+export function generateIdentityKeys(masterKeyType = 'ECDSA_SECP256K1') {
+    // Asset lock key (one-time) - always ECDSA_SECP256K1
     const assetLockPrivate = generatePrivateKey();
     const assetLockPublic = getPublicKey(assetLockPrivate);
 
@@ -115,25 +164,22 @@ export function generateIdentityKeys() {
     // purpose: AUTHENTICATION, ENCRYPTION, DECRYPTION, TRANSFER, WITHDRAW, VOTING, OWNER
     // securityLevel: MASTER, CRITICAL, HIGH, MEDIUM
     const keySpecs = [
-        { id: 0, purpose: 'AUTHENTICATION', securityLevel: 'MASTER', name: 'Master (Authentication)' },
-        { id: 1, purpose: 'AUTHENTICATION', securityLevel: 'HIGH', name: 'High Auth' },
-        { id: 2, purpose: 'AUTHENTICATION', securityLevel: 'CRITICAL', name: 'Critical Auth' },
-        { id: 3, purpose: 'TRANSFER', securityLevel: 'CRITICAL', name: 'Transfer' },
+        { id: 0, purpose: 'AUTHENTICATION', securityLevel: 'MASTER', keyType: masterKeyType, name: 'Master (Authentication)' },
+        { id: 1, purpose: 'AUTHENTICATION', securityLevel: 'HIGH', keyType: 'ECDSA_SECP256K1', name: 'High Auth' },
+        { id: 2, purpose: 'AUTHENTICATION', securityLevel: 'CRITICAL', keyType: 'ECDSA_SECP256K1', name: 'Critical Auth' },
+        { id: 3, purpose: 'TRANSFER', securityLevel: 'CRITICAL', keyType: 'ECDSA_SECP256K1', name: 'Transfer' },
     ];
 
     const identityKeys = keySpecs.map(spec => {
-        const priv = generatePrivateKey();
-        const pub = getPublicKey(priv);
-        return {
-            id: spec.id,
-            keyType: 'ECDSA_SECP256K1',
+        const key = generateKey({
+            keyType: spec.keyType,
             purpose: spec.purpose,
             securityLevel: spec.securityLevel,
-            data: toBase64(pub),
-            readOnly: false,
-            privateKeyHex: toHex(priv),
-            privateKeyWif: toWIF(priv), // Keep WIF for user display
-            _name: spec.name
+            name: spec.name
+        });
+        return {
+            id: spec.id,
+            ...key
         };
     });
 
@@ -151,6 +197,8 @@ export function generateIdentityKeys() {
 // Export to window for non-module usage
 if (typeof window !== 'undefined') {
     window.generateIdentityKeys = generateIdentityKeys;
+    window.generateKey = generateKey;
+    window.KEY_TYPES = KEY_TYPES;
 }
 '''
     src_file.write_text(src_content, encoding='utf-8')

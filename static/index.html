@@ -746,11 +746,13 @@
     <script type="module">
         // Import SDK and key generation utilities
         import { EvoSDK } from '/static/dist/evo-sdk.module.js';
-        import { generateIdentityKeys } from '/static/js/keys.js';
+        import { generateIdentityKeys, generateKey, KEY_TYPES } from '/static/js/keys.js';
 
         // Make functions available globally
         window.EvoSDK = EvoSDK;
         window.generateIdentityKeys = generateIdentityKeys;
+        window.generateKey = generateKey;
+        window.KEY_TYPES = KEY_TYPES;
 
         // Signal that modules are loaded
         window.modulesLoaded = true;
@@ -1166,8 +1168,21 @@
                 const item = document.createElement('div');
                 item.className = 'key-config-item';
 
+                // Key type dropdown
+                const keyTypeSelect = document.createElement('select');
+                keyTypeSelect.title = 'Key Type';
+                ['ECDSA_SECP256K1', 'ECDSA_HASH160'].forEach(kt => {
+                    const opt = document.createElement('option');
+                    opt.value = kt;
+                    opt.textContent = kt === 'ECDSA_SECP256K1' ? 'SECP256K1' : 'HASH160';
+                    if (key.keyType === kt) opt.selected = true;
+                    keyTypeSelect.appendChild(opt);
+                });
+                keyTypeSelect.addEventListener('change', (e) => updateKeyType(index, e.target.value));
+
                 // Purpose dropdown
                 const purposeSelect = document.createElement('select');
+                purposeSelect.title = 'Purpose';
                 ['AUTHENTICATION', 'TRANSFER', 'VOTING', 'OWNER'].forEach(p => {
                     const opt = document.createElement('option');
                     opt.value = p;
@@ -1177,15 +1192,9 @@
                 });
                 purposeSelect.addEventListener('change', (e) => updateKeyPurpose(index, e.target.value));
 
-                // Private key input
-                const input = document.createElement('input');
-                input.type = 'text';
-                input.value = key.privateKeyWif || '';
-                input.placeholder = 'Private key (WIF format)';
-                input.addEventListener('change', (e) => updateKeyWif(index, e.target.value));
-
                 // Security level dropdown
                 const levelSelect = document.createElement('select');
+                levelSelect.title = 'Security Level';
                 ['MASTER', 'CRITICAL', 'HIGH', 'MEDIUM'].forEach(l => {
                     const opt = document.createElement('option');
                     opt.value = l;
@@ -1195,17 +1204,45 @@
                 });
                 levelSelect.addEventListener('change', (e) => updateKeyLevel(index, e.target.value));
 
+                // Private key display (read-only, with copy button)
+                const keyInfo = document.createElement('div');
+                keyInfo.style.cssText = 'flex: 1; display: flex; align-items: center; gap: 5px;';
+                const keyLabel = document.createElement('span');
+                keyLabel.style.cssText = 'font-size: 0.75rem; color: #888; white-space: nowrap;';
+                keyLabel.textContent = key._name || `Key ${index}`;
+                keyInfo.appendChild(keyLabel);
+
                 const removeBtn = document.createElement('button');
                 removeBtn.className = 'remove-key';
                 removeBtn.innerHTML = '&times;';
                 removeBtn.addEventListener('click', () => removeKeyConfig(index));
 
+                item.appendChild(keyTypeSelect);
                 item.appendChild(purposeSelect);
-                item.appendChild(input);
                 item.appendChild(levelSelect);
+                item.appendChild(keyInfo);
                 item.appendChild(removeBtn);
                 container.appendChild(item);
             });
+        }
+
+        function updateKeyType(index, keyType) {
+            // When key type changes, regenerate the key with new type
+            if (window.generateKey) {
+                const oldKey = keyConfigs[index];
+                const newKey = window.generateKey({
+                    keyType: keyType,
+                    purpose: oldKey.purpose,
+                    securityLevel: oldKey.securityLevel,
+                    name: oldKey._name
+                });
+                keyConfigs[index] = {
+                    id: oldKey.id,
+                    ...newKey
+                };
+            } else {
+                keyConfigs[index].keyType = keyType;
+            }
         }
 
         function updateKeyPurpose(index, purpose) {
@@ -1226,17 +1263,21 @@
         }
 
         function addKeyConfig() {
-            // Generate a new key
-            if (window.generateIdentityKeys) {
-                const newKeys = window.generateIdentityKeys();
-                if (newKeys.identityKeys.length > 0) {
-                    const newKey = newKeys.identityKeys[0];
-                    keyConfigs.push({
-                        ...newKey,
-                        purpose: 'AUTHENTICATION',
-                        securityLevel: 'HIGH'
-                    });
-                }
+            // Generate a new key using generateKey
+            if (window.generateKey) {
+                const newId = keyConfigs.length > 0
+                    ? Math.max(...keyConfigs.map(k => k.id)) + 1
+                    : 0;
+                const newKey = window.generateKey({
+                    keyType: 'ECDSA_SECP256K1',
+                    purpose: 'AUTHENTICATION',
+                    securityLevel: 'HIGH',
+                    name: `Key ${newId}`
+                });
+                keyConfigs.push({
+                    id: newId,
+                    ...newKey
+                });
             }
             renderKeyConfigs();
         }
@@ -1329,6 +1370,7 @@
         window.resetCoreFaucetCard = resetCoreFaucetCard;
         window.showIdentityConfig = showIdentityConfig;
         window.renderKeyConfigs = renderKeyConfigs;
+        window.updateKeyType = updateKeyType;
         window.updateKeyWif = updateKeyWif;
         window.updateKeyPurpose = updateKeyPurpose;
         window.updateKeyLevel = updateKeyLevel;
