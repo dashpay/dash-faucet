@@ -38,7 +38,7 @@ services:
       - "8000:8000"
     environment:
       - DASH_RPC_USER=dashrpc
-      - DASH_RPC_PASSWORD=password
+      - DASH_RPC_PASSWORD=${DASH_RPC_PASSWORD:-password}
       - DASH_RPC_HOST=dashcore
       - DASH_RPC_PORT=19998
       - RATE_LIMIT_PER_HOUR=3
