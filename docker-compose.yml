@@ -14,7 +14,7 @@ services:
       - default
       - dash-net
     healthcheck:
-      test: ["CMD", "dash-cli", "-testnet", "-rpcuser=dashrpc", "-rpcpassword=password", "getblockchaininfo"]
+      test: ["CMD", "dash-cli", "-conf=/home/dash/.dashcore/dash.conf", "getblockchaininfo"]
       interval: 30s
       timeout: 10s
       retries: 10
