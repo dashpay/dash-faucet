@@ -15,7 +15,6 @@ class DashCoreClient:
             f"http://{settings.dash_rpc_user}:{settings.dash_rpc_password}"
             f"@{settings.dash_rpc_host}:{settings.dash_rpc_port}"
         )
-        print(f"RPC URL: {self._rpc_url}")
         self._rpc: AuthServiceProxy | None = None
         self._deposit_address: str | None = None
 
