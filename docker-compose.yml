@@ -51,6 +51,8 @@ services:
       - CAP_SECRET=${CAP_SECRET:-}
       - CAP_HARD_SITE_KEY=${CAP_HARD_SITE_KEY:-}
       - CAP_HARD_SECRET=${CAP_HARD_SECRET:-}
+      - FAUCET_API_KEY_HASHES=${FAUCET_API_KEY_HASHES:-}
+      - FAUCET_API_KEY_DAILY_LIMIT=${FAUCET_API_KEY_DAILY_LIMIT:-100}
     depends_on:
       dashcore:
         condition: service_healthy

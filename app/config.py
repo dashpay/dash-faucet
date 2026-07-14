@@ -34,6 +34,11 @@ class Settings(BaseSettings):
     cap_hard_site_key: str = ""
     cap_hard_secret: str = ""
 
+    # Trusted server-to-server faucet API
+    # JSON mapping of key IDs to SHA-256 key hashes.
+    faucet_api_key_hashes: str = ""
+    faucet_api_key_daily_limit: int = 100
+
     # Promo codes config file path
     promo_codes_file: str = "promo_codes.json"
 
