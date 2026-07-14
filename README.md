@@ -41,6 +41,8 @@ Environment variables:
 | `CORE_FAUCET_AMOUNT` | DASH amount for core faucet | `1.0` |
 | `CAP_SITE_KEY` | CAP captcha site key | - |
 | `CAP_SECRET` | CAP captcha secret | - |
+| `FAUCET_API_KEY_HASHES` | JSON map of trusted API key IDs to SHA-256 hashes | - |
+| `FAUCET_API_KEY_DAILY_LIMIT` | Successful payouts allowed per trusted key per rolling 24 hours | `100` |
 
 ## Architecture
 
@@ -53,6 +55,23 @@ Environment variables:
 - `GET /api/status` - Faucet status, balance, and deposit address
 - `POST /api/identity-package` - Get an identity package with asset lock proof
 - `POST /api/core-faucet` - Request testnet DASH
+- `POST /api/v1/core-faucet` - Trusted bearer-key tDASH payout without browser CAPTCHA or public IP limits
+
+### Trusted API
+
+The trusted endpoint requires `Authorization: Bearer <key>` and accepts only an
+`address` field. API keys are configured as SHA-256 hashes so plaintext keys do
+not need to be stored by the faucet.
+
+```bash
+curl -X POST https://faucet.testnet.networks.dash.org/api/v1/core-faucet \
+  -H "Authorization: Bearer $FAUCET_API_KEY" \
+  -H "Content-Type: application/json" \
+  --data '{"address":"YOUR_TESTNET_DASH_ADDRESS"}'
+```
+
+This endpoint bypasses the browser CAPTCHA and public IP rate limit, but retains
+a per-key rolling daily limit. Promo codes are not accepted by the trusted API.
 
 ## Development
 

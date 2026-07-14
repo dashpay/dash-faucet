@@ -2,11 +2,27 @@
 
 Provides the main endpoint for creating identity packages.
 """
+import logging
+from typing import Annotated
+
 import httpx
-from fastapi import APIRouter, Request, Response, HTTPException
+from fastapi import APIRouter, Header, Request, Response, HTTPException
 from pydantic import BaseModel
 
 from app.config import settings
+from app.middleware.rate_limit import RateLimiter, rate_limiter
+from app.models.schemas import FaucetResponse, ErrorResponse, RateLimitResponse, PublicKeyInfo
+from app.services.api_keys import authenticate_api_key
+from app.services.asset_lock import (
+    create_asset_lock_transaction,
+    get_suitable_utxo,
+    COIN,
+)
+from app.services.core_client import dash_client
+from app.services.instant_lock import wait_for_instant_lock, InstantLockTimeout
+from app.services.keys import generate_key_pair, create_identity_public_key
+from app.services.proof_builder import build_instant_asset_lock_proof
+from app.services.promo import promo_service
 
 
 class FaucetRequest(BaseModel):
@@ -35,6 +51,11 @@ class CoreFaucetRequest(BaseModel):
     capToken: str | None = None
     hardCapToken: str | None = None
     promoCode: str | None = None
+
+
+class ApiCoreFaucetRequest(BaseModel):
+    """Request body for trusted server-to-server tDASH payouts."""
+    address: str
 
 
 class CoreFaucetResponse(BaseModel):
@@ -77,21 +98,14 @@ async def verify_cap_token(token: str, hard: bool = False) -> bool:
             return result.get("success", False)
     except Exception:
         return False
-from app.middleware.rate_limit import rate_limiter
-from app.models.schemas import FaucetResponse, ErrorResponse, RateLimitResponse, PublicKeyInfo
-from app.services.core_client import dash_client
-from app.services.keys import generate_key_pair, create_identity_public_key
-from app.services.asset_lock import (
-    create_asset_lock_transaction,
-    get_suitable_utxo,
-    COIN
-)
-from app.services.instant_lock import wait_for_instant_lock, InstantLockTimeout
-from app.services.proof_builder import build_instant_asset_lock_proof
-from app.services.promo import promo_service
 
 
 router = APIRouter(prefix="/api", tags=["faucet"])
+logger = logging.getLogger(__name__)
+api_key_rate_limiter = RateLimiter(
+    max_requests=settings.faucet_api_key_daily_limit,
+    window_seconds=24 * 60 * 60,
+)
 
 
 def get_client_ip(request: Request) -> str:
@@ -584,14 +598,6 @@ async def core_faucet(request: Request, body: CoreFaucetRequest) -> CoreFaucetRe
                 headers={"Retry-After": str(retry_after)}
             )
 
-    # Validate address format (basic check for testnet address)
-    address = body.address.strip()
-    if not address or len(address) < 26:
-        raise HTTPException(
-            status_code=400,
-            detail={"error": "Invalid address format"}
-        )
-
     # Determine send amount (promo code may override)
     send_amount = settings.core_faucet_amount
     promo_code_used = None
@@ -606,17 +612,29 @@ async def core_faucet(request: Request, body: CoreFaucetRequest) -> CoreFaucetRe
         send_amount = promo_amount
         promo_code_used = body.promoCode
 
+    result = dispense_core_dash(body.address, send_amount)
+
+    # Record successful request for rate limiting
+    rate_limiter.record_request(client_ip)
+
+    # Record promo code usage
+    if promo_code_used:
+        promo_service.record_usage(promo_code_used, client_ip)
+
+    return result
+
+
+def dispense_core_dash(address_value: str, send_amount: float) -> CoreFaucetResponse:
+    """Validate an address and send a fixed amount of testnet DASH."""
+    address = address_value.strip()
+    if not address or len(address) < 26:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "Invalid address format"}
+        )
+
     try:
-        # Send DASH to the address
         txid = dash_client.send_to_address(address, send_amount)
-
-        # Record successful request for rate limiting
-        rate_limiter.record_request(client_ip)
-
-        # Record promo code usage
-        if promo_code_used:
-            promo_service.record_usage(promo_code_used, client_ip)
-
         return CoreFaucetResponse(
             txid=txid,
             amount=send_amount,
@@ -645,3 +663,50 @@ async def core_faucet(request: Request, body: CoreFaucetRequest) -> CoreFaucetRe
                 "detail": error_msg
             }
         )
+
+
+@router.post(
+    "/v1/core-faucet",
+    response_model=CoreFaucetResponse,
+    responses={
+        400: {"model": ErrorResponse, "description": "Invalid request"},
+        401: {"description": "Missing or invalid API key"},
+        429: {"model": RateLimitResponse, "description": "API key daily limit exceeded"},
+        500: {"model": ErrorResponse, "description": "Server error"},
+        503: {"model": ErrorResponse, "description": "Service unavailable"},
+    },
+)
+async def api_core_faucet(
+    body: ApiCoreFaucetRequest,
+    authorization: Annotated[str | None, Header()] = None,
+) -> CoreFaucetResponse:
+    """Send tDASH for a trusted API client without browser CAPTCHA or IP limits."""
+    key_id = authenticate_api_key(authorization)
+    if key_id is None:
+        raise HTTPException(
+            status_code=401,
+            detail={"error": "Missing or invalid API key"},
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    allowed, retry_after = api_key_rate_limiter.is_allowed(key_id)
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error": "API key daily limit exceeded",
+                "retryAfter": retry_after,
+            },
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    result = dispense_core_dash(body.address, settings.core_faucet_amount)
+    api_key_rate_limiter.record_request(key_id)
+    logger.info(
+        "Trusted faucet API payout key_id=%s address=%s amount=%s txid=%s",
+        key_id,
+        result.address,
+        result.amount,
+        result.txid,
+    )
+    return result
