@@ -2,19 +2,23 @@ services:
   dashcore:
     image: dashpay/dashd:latest
     container_name: faucet-dashcore
-    command: ["dashd"]
+    command: ["dashd", "-rpcpassword=${DASH_RPC_PASSWORD:?set DASH_RPC_PASSWORD in .env}"]
+    environment:
+      - DASH_RPC_PASSWORD=${DASH_RPC_PASSWORD:?set DASH_RPC_PASSWORD in .env}
     volumes:
       - dashcore-data:/home/dash/.dashcore
       - ./dashcore-config/dash.conf:/home/dash/.dashcore/dash.conf:ro
     ports:
-      - "19998:19998"
+      # RPC holds the faucet wallet: loopback only. Other containers reach it
+      # over the dash-net network.
+      - "127.0.0.1:19998:19998"
       - "19999:19999"
     restart: unless-stopped
     networks:
       - default
       - dash-net
     healthcheck:
-      test: ["CMD", "dash-cli", "-conf=/home/dash/.dashcore/dash.conf", "getblockchaininfo"]
+      test: ["CMD-SHELL", "dash-cli -conf=/home/dash/.dashcore/dash.conf -rpcpassword=\"$$DASH_RPC_PASSWORD\" getblockchaininfo"]
       interval: 30s
       timeout: 10s
       retries: 10
@@ -38,10 +42,11 @@ services:
       - "8000:8000"
     environment:
       - DASH_RPC_USER=dashrpc
-      - DASH_RPC_PASSWORD=${DASH_RPC_PASSWORD:-password}
+      - DASH_RPC_PASSWORD=${DASH_RPC_PASSWORD:?set DASH_RPC_PASSWORD in .env}
       - DASH_RPC_HOST=dashcore
       - DASH_RPC_PORT=19998
       - RATE_LIMIT_PER_HOUR=3
+      - TRUSTED_PROXY_HOPS=${TRUSTED_PROXY_HOPS:-1}
       - CREDIT_AMOUNT=100000000
       - CORE_FAUCET_AMOUNT=1.0
       - ISLOCK_TIMEOUT=30
@@ -51,6 +56,7 @@ services:
       - CAP_SECRET=${CAP_SECRET:-}
       - CAP_HARD_SITE_KEY=${CAP_HARD_SITE_KEY:-}
       - CAP_HARD_SECRET=${CAP_HARD_SECRET:-}
+      - PROMO_CODES=${PROMO_CODES:-}
     depends_on:
       dashcore:
         condition: service_healthy

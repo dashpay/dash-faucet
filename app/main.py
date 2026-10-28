@@ -1,4 +1,5 @@
 """Platform Identity Faucet - FastAPI Application."""
+import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,6 +9,11 @@ import os
 
 from app.routers import faucet
 from app.services.core_client import dash_client
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
 
 
 @asynccontextmanager
@@ -45,8 +51,9 @@ app = FastAPI(
 # CORS middleware for frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, restrict this
-    allow_credentials=True,
+    allow_origins=["*"],
+    # The API uses no cookies; credentialed wildcard CORS is never needed.
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )

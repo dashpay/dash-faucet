@@ -11,6 +11,11 @@ class Settings(BaseSettings):
     # Rate limiting
     rate_limit_per_hour: int = 3
 
+    # Reverse proxies in front of the app that append to X-Forwarded-For
+    # (AWS ALB, Cloudflare tunnel, nginx: one each). 0 = no proxy; use the
+    # socket peer and ignore the header, which the client controls.
+    trusted_proxy_hops: int = 1
+
     # Credit amount in duffs (1 DASH = 100,000,000 duffs)
     credit_amount: int = 100_000_000  # 1 DASH
 

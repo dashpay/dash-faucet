@@ -2,11 +2,27 @@
 
 Provides the main endpoint for creating identity packages.
 """
+import logging
+
 import httpx
 from fastapi import APIRouter, Request, Response, HTTPException
 from pydantic import BaseModel
 
 from app.config import settings
+from app.middleware.rate_limit import get_client_ip, rate_limiter
+from app.models.schemas import FaucetResponse, ErrorResponse, RateLimitResponse, PublicKeyInfo
+from app.services.core_client import dash_client
+from app.services.keys import generate_key_pair, create_identity_public_key
+from app.services.asset_lock import (
+    create_asset_lock_transaction,
+    get_suitable_utxo,
+    COIN
+)
+from app.services.instant_lock import wait_for_instant_lock, InstantLockTimeout
+from app.services.proof_builder import build_instant_asset_lock_proof
+from app.services.promo import promo_service
+
+logger = logging.getLogger(__name__)
 
 
 class FaucetRequest(BaseModel):
@@ -44,22 +60,37 @@ class CoreFaucetResponse(BaseModel):
     address: str
 
 
+def cap_configured(hard: bool = False) -> bool:
+    if hard:
+        return bool(settings.cap_hard_site_key and settings.cap_hard_secret)
+    return bool(settings.cap_site_key and settings.cap_secret)
+
+
+def cap_required() -> bool:
+    """Any soft CAP setting means the captcha is wanted. A half-configured tier
+    then rejects every token rather than silently turning the captcha off."""
+    return bool(settings.cap_site_key or settings.cap_secret)
+
+
 async def verify_cap_token(token: str, hard: bool = False) -> bool:
     """Verify a CAP token with the CAP server.
+
+    Fails closed: a tier that is not configured accepts nothing. Callers
+    decide separately whether an unconfigured soft tier means "no captcha".
 
     Args:
         token: The CAP token to verify
         hard: If True, verify against the hard CAP key (for rate limit bypass)
     """
+    if not cap_configured(hard):
+        return False
+
     if hard:
         site_key = settings.cap_hard_site_key
         secret = settings.cap_hard_secret
     else:
         site_key = settings.cap_site_key
         secret = settings.cap_secret
-
-    if not site_key or not secret:
-        return True  # CAP not configured, skip verification
 
     verify_url = f"{settings.cap_internal_endpoint}/{site_key}/siteverify"
 
@@ -76,42 +107,54 @@ async def verify_cap_token(token: str, hard: bool = False) -> bool:
             result = response.json()
             return result.get("success", False)
     except Exception:
+        logger.warning("CAP siteverify failed", exc_info=True)
         return False
-from app.middleware.rate_limit import rate_limiter
-from app.models.schemas import FaucetResponse, ErrorResponse, RateLimitResponse, PublicKeyInfo
-from app.services.core_client import dash_client
-from app.services.keys import generate_key_pair, create_identity_public_key
-from app.services.asset_lock import (
-    create_asset_lock_transaction,
-    get_suitable_utxo,
-    COIN
-)
-from app.services.instant_lock import wait_for_instant_lock, InstantLockTimeout
-from app.services.proof_builder import build_instant_asset_lock_proof
-from app.services.promo import promo_service
+
+
+async def enforce_captcha_and_rate_limit(body: BaseModel, client_ip: str) -> None:
+    """Check the captcha and the per-IP limit, raising HTTPException on failure.
+
+    A hard captcha token stands in for the regular one and lifts the per-IP
+    limit, so it is always verified before it is honoured. Without a regular
+    CAP configured the soft check is skipped (local development).
+    """
+    hard_token = getattr(body, "hardCapToken", None)
+    if hard_token:
+        if not await verify_cap_token(hard_token, hard=True):
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "Invalid hard captcha token"}
+            )
+        return
+
+    if cap_required():
+        cap_token = getattr(body, "capToken", None)
+        if not cap_token:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "Captcha token required"}
+            )
+        if not await verify_cap_token(cap_token):
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "Invalid captcha token"}
+            )
+
+    allowed, retry_after = rate_limiter.is_allowed(client_ip)
+    if allowed:
+        return
+
+    detail: dict = {"error": "Rate limit exceeded", "retryAfter": retry_after}
+    if cap_configured(hard=True):
+        detail["requiresHardCaptcha"] = True
+    raise HTTPException(
+        status_code=429,
+        detail=detail,
+        headers={"Retry-After": str(retry_after)}
+    )
 
 
 router = APIRouter(prefix="/api", tags=["faucet"])
-
-
-def get_client_ip(request: Request) -> str:
-    """Extract client IP from request, handling proxies."""
-    # Check for X-Forwarded-For header (when behind proxy)
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        # Take the first IP in the chain (original client)
-        return forwarded.split(",")[0].strip()
-
-    # Check for X-Real-IP header
-    real_ip = request.headers.get("X-Real-IP")
-    if real_ip:
-        return real_ip
-
-    # Fall back to direct client IP
-    if request.client:
-        return request.client.host
-
-    return "unknown"
 
 
 @router.post(
@@ -138,57 +181,8 @@ async def create_identity_package(request: Request, body: FaucetRequest = Faucet
     Returns:
         FaucetResponse with all data needed to create a Platform identity
     """
-    # CAP verification (if configured)
-    # Skip regular CAP if hardCapToken provided (for rate limit bypass retries)
-    cap_configured = bool(settings.cap_site_key and settings.cap_secret)
-    if cap_configured and not body.hardCapToken:
-        if not body.capToken:
-            raise HTTPException(
-                status_code=400,
-                detail={"error": "Captcha token required"}
-            )
-        if not await verify_cap_token(body.capToken):
-            raise HTTPException(
-                status_code=400,
-                detail={"error": "Invalid captcha token"}
-            )
-
-    # Rate limiting
     client_ip = get_client_ip(request)
-    allowed, retry_after = rate_limiter.is_allowed(client_ip)
-
-    if not allowed:
-        hard_cap_configured = bool(settings.cap_hard_site_key and settings.cap_hard_secret)
-
-        # Allow bypass with hard captcha
-        if body.hardCapToken:
-            if not await verify_cap_token(body.hardCapToken, hard=True):
-                raise HTTPException(
-                    status_code=400,
-                    detail={"error": "Invalid hard captcha token"}
-                )
-            # Valid hard captcha - allow the request to proceed
-        elif hard_cap_configured:
-            # Hard captcha available but not provided
-            raise HTTPException(
-                status_code=429,
-                detail={
-                    "error": "Rate limit exceeded",
-                    "retryAfter": retry_after,
-                    "requiresHardCaptcha": True
-                },
-                headers={"Retry-After": str(retry_after)}
-            )
-        else:
-            # No bypass available
-            raise HTTPException(
-                status_code=429,
-                detail={
-                    "error": "Rate limit exceeded",
-                    "retryAfter": retry_after
-                },
-                headers={"Retry-After": str(retry_after)}
-            )
+    await enforce_captcha_and_rate_limit(body, client_ip)
 
     try:
         # Generate keys
@@ -229,12 +223,10 @@ async def create_identity_package(request: Request, body: FaucetRequest = Faucet
         sign_result = dash_client.sign_raw_transaction_with_wallet(tx_bytes.hex())
 
         if not sign_result.get("complete"):
+            logger.error("Failed to sign transaction: %s", sign_result.get("errors", []))
             raise HTTPException(
                 status_code=500,
-                detail={
-                    "error": "Failed to sign transaction",
-                    "detail": str(sign_result.get("errors", []))
-                }
+                detail={"error": "Failed to sign transaction"}
             )
 
         signed_tx_hex = sign_result["hex"]
@@ -281,13 +273,11 @@ async def create_identity_package(request: Request, body: FaucetRequest = Faucet
 
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception:
+        logger.exception("Faucet request failed")
         raise HTTPException(
             status_code=500,
-            detail={
-                "error": "Internal server error",
-                "detail": str(e)
-            }
+            detail={"error": "Internal server error"}
         )
 
 
@@ -329,52 +319,8 @@ async def create_asset_lock_proof(request: Request, body: AssetLockProofRequest)
             detail={"error": f"Invalid public key: {e}"}
         )
 
-    # CAP verification (if configured)
-    cap_configured = bool(settings.cap_site_key and settings.cap_secret)
-    if cap_configured and not body.hardCapToken:
-        if not body.capToken:
-            raise HTTPException(
-                status_code=400,
-                detail={"error": "Captcha token required"}
-            )
-        if not await verify_cap_token(body.capToken):
-            raise HTTPException(
-                status_code=400,
-                detail={"error": "Invalid captcha token"}
-            )
-
-    # Rate limiting
     client_ip = get_client_ip(request)
-    allowed, retry_after = rate_limiter.is_allowed(client_ip)
-
-    if not allowed:
-        hard_cap_configured = bool(settings.cap_hard_site_key and settings.cap_hard_secret)
-
-        if body.hardCapToken:
-            if not await verify_cap_token(body.hardCapToken, hard=True):
-                raise HTTPException(
-                    status_code=400,
-                    detail={"error": "Invalid hard captcha token"}
-                )
-        elif hard_cap_configured:
-            raise HTTPException(
-                status_code=429,
-                detail={
-                    "error": "Rate limit exceeded",
-                    "retryAfter": retry_after,
-                    "requiresHardCaptcha": True
-                },
-                headers={"Retry-After": str(retry_after)}
-            )
-        else:
-            raise HTTPException(
-                status_code=429,
-                detail={
-                    "error": "Rate limit exceeded",
-                    "retryAfter": retry_after
-                },
-                headers={"Retry-After": str(retry_after)}
-            )
+    await enforce_captcha_and_rate_limit(body, client_ip)
 
     try:
         # Get a suitable UTXO
@@ -408,12 +354,10 @@ async def create_asset_lock_proof(request: Request, body: AssetLockProofRequest)
         sign_result = dash_client.sign_raw_transaction_with_wallet(tx_bytes.hex())
 
         if not sign_result.get("complete"):
+            logger.error("Failed to sign transaction: %s", sign_result.get("errors", []))
             raise HTTPException(
                 status_code=500,
-                detail={
-                    "error": "Failed to sign transaction",
-                    "detail": str(sign_result.get("errors", []))
-                }
+                detail={"error": "Failed to sign transaction"}
             )
 
         signed_tx_hex = sign_result["hex"]
@@ -452,13 +396,11 @@ async def create_asset_lock_proof(request: Request, body: AssetLockProofRequest)
 
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception:
+        logger.exception("Faucet request failed")
         raise HTTPException(
             status_code=500,
-            detail={
-                "error": "Internal server error",
-                "detail": str(e)
-            }
+            detail={"error": "Internal server error"}
         )
 
 
@@ -492,7 +434,8 @@ async def get_status(response: Response) -> dict:
 
         return {
             "status": status,
-            "balance": total_balance,
+            # Core returns a Decimal, which would serialise as a JSON string.
+            "balance": float(total_balance),
             "availableUtxos": available_utxos,
             "creditAmount": settings.credit_amount / COIN,
             "coreFaucetAmount": settings.core_faucet_amount,
@@ -502,11 +445,12 @@ async def get_status(response: Response) -> dict:
             "capEndpoint": cap_endpoint,
             "hardCapEndpoint": hard_cap_endpoint
         }
-    except Exception as e:
+    except Exception:
+        logger.exception("Status check failed")
         response.status_code = 503
         return {
             "status": "error",
-            "error": str(e)
+            "error": "Faucet backend unavailable"
         }
 
 
@@ -532,57 +476,8 @@ async def core_faucet(request: Request, body: CoreFaucetRequest) -> CoreFaucetRe
     Returns:
         CoreFaucetResponse with txid and amount sent
     """
-    # CAP verification (if configured)
-    # Skip regular CAP if hardCapToken provided (for rate limit bypass retries)
-    cap_configured = bool(settings.cap_site_key and settings.cap_secret)
-    if cap_configured and not body.hardCapToken:
-        if not body.capToken:
-            raise HTTPException(
-                status_code=400,
-                detail={"error": "Captcha token required"}
-            )
-        if not await verify_cap_token(body.capToken):
-            raise HTTPException(
-                status_code=400,
-                detail={"error": "Invalid captcha token"}
-            )
-
-    # Rate limiting
     client_ip = get_client_ip(request)
-    allowed, retry_after = rate_limiter.is_allowed(client_ip)
-
-    if not allowed:
-        hard_cap_configured = bool(settings.cap_hard_site_key and settings.cap_hard_secret)
-
-        # Allow bypass with hard captcha
-        if body.hardCapToken:
-            if not await verify_cap_token(body.hardCapToken, hard=True):
-                raise HTTPException(
-                    status_code=400,
-                    detail={"error": "Invalid hard captcha token"}
-                )
-            # Valid hard captcha - allow the request to proceed
-        elif hard_cap_configured:
-            # Hard captcha available but not provided
-            raise HTTPException(
-                status_code=429,
-                detail={
-                    "error": "Rate limit exceeded",
-                    "retryAfter": retry_after,
-                    "requiresHardCaptcha": True
-                },
-                headers={"Retry-After": str(retry_after)}
-            )
-        else:
-            # No bypass available
-            raise HTTPException(
-                status_code=429,
-                detail={
-                    "error": "Rate limit exceeded",
-                    "retryAfter": retry_after
-                },
-                headers={"Retry-After": str(retry_after)}
-            )
+    await enforce_captcha_and_rate_limit(body, client_ip)
 
     # Validate address format (basic check for testnet address)
     address = body.address.strip()
@@ -638,10 +533,8 @@ async def core_faucet(request: Request, body: CoreFaucetRequest) -> CoreFaucetRe
                 status_code=503,
                 detail={"error": "Faucet has insufficient funds"}
             )
+        logger.exception("Core faucet payout failed")
         raise HTTPException(
             status_code=500,
-            detail={
-                "error": "Internal server error",
-                "detail": error_msg
-            }
+            detail={"error": "Internal server error"}
         )
