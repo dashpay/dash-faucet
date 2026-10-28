@@ -98,3 +98,41 @@ def test_no_cap_configured_is_open_and_429_has_no_hard_hint(client, cap, sent, m
 def test_identity_endpoints_reject_bogus_hard_token(client, cap, path, body):
     response = client.post(path, json=body, headers={"X-Forwarded-For": "93.184.216.34"})
     assert response.status_code == 400
+
+
+def test_half_configured_soft_cap_fails_closed(client, sent, monkeypatch):
+    # Site key set, secret forgotten: the UI shows a captcha, so the backend
+    # must not quietly accept requests without one.
+    monkeypatch.setattr(settings, "cap_secret", "")
+    assert post(client, {"address": ADDRESS}).status_code == 400
+    assert post(client, {"address": ADDRESS, "capToken": "anything"}).status_code == 400
+    assert sent == []
+
+
+@pytest.mark.parametrize("hard", [False, True])
+def test_real_verify_fails_closed_when_tier_unconfigured(monkeypatch, hard):
+    import asyncio
+
+    import httpx
+
+    from app.routers import faucet
+
+    class Ok:
+        def json(self):
+            return {"success": True}
+
+    class StubClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def post(self, *args, **kwargs):
+            return Ok()
+
+    monkeypatch.setattr(httpx, "AsyncClient", StubClient)
+    # Configured: the stub's success is honoured, proving the stub is reached.
+    assert asyncio.run(faucet.verify_cap_token("x", hard=hard)) is True
+    monkeypatch.setattr(settings, "cap_hard_secret" if hard else "cap_secret", "")
+    assert asyncio.run(faucet.verify_cap_token("x", hard=hard)) is False

@@ -66,6 +66,12 @@ def cap_configured(hard: bool = False) -> bool:
     return bool(settings.cap_site_key and settings.cap_secret)
 
 
+def cap_required() -> bool:
+    """Any soft CAP setting means the captcha is wanted. A half-configured tier
+    then rejects every token rather than silently turning the captcha off."""
+    return bool(settings.cap_site_key or settings.cap_secret)
+
+
 async def verify_cap_token(token: str, hard: bool = False) -> bool:
     """Verify a CAP token with the CAP server.
 
@@ -121,7 +127,7 @@ async def enforce_captcha_and_rate_limit(body: BaseModel, client_ip: str) -> Non
             )
         return
 
-    if cap_configured():
+    if cap_required():
         cap_token = getattr(body, "capToken", None)
         if not cap_token:
             raise HTTPException(
