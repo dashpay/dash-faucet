@@ -1,10 +1,63 @@
 """IP-based rate limiting middleware."""
 import ipaddress
+import logging
 import time
 from collections import defaultdict
 from threading import Lock
 
+from fastapi import Request
+
 from app.config import settings
+
+logger = logging.getLogger(__name__)
+_warned_private_ip = False
+
+
+def get_client_ip(request: Request) -> str:
+    """Return the client IP, trusting only what our own proxies appended.
+
+    Each trusted proxy (AWS ALB, Cloudflare, nginx) appends the address it
+    received the connection from to X-Forwarded-For, so the client is the
+    entry `trusted_proxy_hops` from the right. Everything left of that was
+    written by the client and is ignored: taking the first entry, as this
+    function used to, let anyone pick their own rate-limit bucket.
+    """
+    peer = request.client.host if request.client else "unknown"
+    hops = settings.trusted_proxy_hops
+    if hops <= 0:
+        return peer
+
+    forwarded = [
+        part.strip()
+        for part in request.headers.get("X-Forwarded-For", "").split(",")
+        if part.strip()
+    ]
+    if not forwarded:
+        return peer
+
+    # Fewer entries than proxies: every entry came from a proxy we trust.
+    ip = forwarded[-hops] if len(forwarded) >= hops else forwarded[0]
+    _warn_if_private(ip)
+    return ip
+
+
+def _warn_if_private(ip: str) -> None:
+    """Log once if the resolved client looks like one of our own proxies."""
+    global _warned_private_ip
+    if _warned_private_ip:
+        return
+    try:
+        private = ipaddress.ip_address(ip).is_private
+    except ValueError:
+        return
+    if private:
+        _warned_private_ip = True
+        logger.warning(
+            "Client IP resolved to private address %s; TRUSTED_PROXY_HOPS=%d "
+            "is probably lower than the number of proxies in front of the faucet",
+            ip,
+            settings.trusted_proxy_hops,
+        )
 
 
 def normalize_ip(ip: str) -> str:

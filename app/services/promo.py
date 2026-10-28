@@ -44,9 +44,10 @@ class PromoService:
                 for code, info in data.items():
                     self._codes[code.upper()] = info["amount"]
             except (json.JSONDecodeError, Exception) as e:
+                # Never log the value: it is the list of valid codes.
                 logger.warning(
-                    "Invalid PROMO_CODES env var (falling back to file only): "
-                    "%s — value was: %s", e, env_codes
+                    "Invalid PROMO_CODES env var (falling back to file only): %s",
+                    type(e).__name__,
                 )
 
     def validate(self, code: str, ip: str) -> float | None:
