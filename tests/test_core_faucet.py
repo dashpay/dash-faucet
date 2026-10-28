@@ -1,9 +1,11 @@
+import pytest
+
 from app.config import settings
 
 ADDRESS = "yPrynRN6ViX2rCcRL5SoSi8ntcWgdHSEaS"
 
 
-def post(client, body, ip="198.51.100.7"):
+def post(client, body, ip="93.184.216.34"):
     return client.post("/api/core-faucet", json=body, headers={"X-Forwarded-For": ip})
 
 
@@ -52,10 +54,10 @@ def test_spoofed_forwarded_for_does_not_reset_limit(client, cap, sent):
     # Each request claims a fresh client IP; the ALB-appended entry is the same.
     for i in range(settings.rate_limit_per_hour):
         response = post(client, {"address": ADDRESS, "capToken": "good-soft"},
-                        ip=f"10.9.9.{i}, 198.51.100.7")
+                        ip=f"10.9.9.{i}, 93.184.216.34")
         assert response.status_code == 200
     response = post(client, {"address": ADDRESS, "capToken": "good-soft"},
-                    ip="10.9.9.99, 198.51.100.7")
+                    ip="10.9.9.99, 93.184.216.34")
     assert response.status_code == 429
 
 
@@ -69,3 +71,30 @@ def test_rpc_error_is_not_echoed(client, cap, monkeypatch):
     response = post(client, {"address": ADDRESS, "capToken": "good-soft"})
     assert response.status_code == 500
     assert "hunter2" not in response.text
+
+
+def test_ui_retry_with_spent_soft_and_good_hard(client, cap, sent):
+    for _ in range(settings.rate_limit_per_hour):
+        post(client, {"address": ADDRESS, "capToken": "good-soft"})
+    response = post(client, {"address": ADDRESS, "capToken": "spent", "hardCapToken": "good-hard"})
+    assert response.status_code == 200
+    assert ("spent", False) not in cap
+
+
+def test_no_cap_configured_is_open_and_429_has_no_hard_hint(client, cap, sent, monkeypatch):
+    for name in ("cap_site_key", "cap_secret", "cap_hard_site_key", "cap_hard_secret"):
+        monkeypatch.setattr(settings, name, "")
+    for _ in range(settings.rate_limit_per_hour):
+        assert post(client, {"address": ADDRESS}).status_code == 200
+    limited = post(client, {"address": ADDRESS})
+    assert limited.status_code == 429
+    assert "requiresHardCaptcha" not in limited.json()["detail"]
+
+
+@pytest.mark.parametrize("path,body", [
+    ("/api/asset-lock-proof", {"assetLockPublicKey": "02" + "11" * 32, "hardCapToken": "junk"}),
+    ("/api/faucet", {"hardCapToken": "junk"}),
+])
+def test_identity_endpoints_reject_bogus_hard_token(client, cap, path, body):
+    response = client.post(path, json=body, headers={"X-Forwarded-For": "93.184.216.34"})
+    assert response.status_code == 400
